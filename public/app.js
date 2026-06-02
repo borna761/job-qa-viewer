@@ -168,11 +168,16 @@ async function saveOrder() {
     p.sortIndex = catCounters[cat]++;
     return { id: p.id, category: cat, sortIndex: p.sortIndex };
   });
-  await fetch('/api/order', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
+  try {
+    const res = await fetch('/api/order', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) showToast('Could not save order');
+  } catch {
+    showToast('Could not save order — are you offline?');
+  }
 }
 
 // ---- Edit mode ----
@@ -371,19 +376,32 @@ function renderSettingsModal(config) {
     onEnd() {
       const newOrder = [...catList.querySelectorAll('.cat-name-input')].map(el => el.value);
       config.categories = newOrder;
-      config.rules = [...config.rules].sort(
-        (a, b) => newOrder.indexOf(a.cat) - newOrder.indexOf(b.cat)
-      );
+      // Re-render rule rows in the new order so they stay positionally in sync
+      syncRulesList(config);
     },
   });
 
-  // Rules
+  syncRulesList(config);
+}
+
+// Re-render just the rule rows, preserving any unsaved keyword edits by old name.
+// Rule rows must always be in the same relative order as non-Other categories so
+// that positional matching at save time is correct.
+function syncRulesList(config) {
+  // Snapshot current keyword edits from the DOM before re-rendering
+  const kwSnapshot = {};
+  document.querySelectorAll('.rule-row').forEach(row => {
+    kwSnapshot[row.dataset.cat] = row.querySelector('.rule-keywords-input').value;
+  });
+
   const rulesList = document.getElementById('rules-list');
+  if (!rulesList) return;
   rulesList.innerHTML = config.categories
     .filter(c => c !== 'Other')
     .map(cat => {
+      // Prefer unsaved edits (by old name), fall back to stored rules
       const rule = config.rules.find(r => r.cat === cat);
-      const keywords = rule ? rule.keywords.join(', ') : '';
+      const keywords = kwSnapshot[cat] ?? (rule ? rule.keywords.join(', ') : '');
       return `
         <div class="rule-row" data-cat="${esc(cat)}">
           <span class="rule-cat-label">${esc(cat)}</span>
@@ -417,16 +435,19 @@ document.getElementById('settings-modal').addEventListener('click', e => {
 document.getElementById('settings-save').addEventListener('click', async () => {
   if (!configCache) return;
 
-  // Read current category names from inputs (user may have typed)
+  // Read current category names from inputs in their current DOM order
   const catInputs = [...document.querySelectorAll('.cat-name-input')];
   configCache.categories = catInputs.map(el => el.value.trim()).filter(Boolean);
 
-  // Read rules from keyword textareas
-  configCache.rules = [...document.querySelectorAll('.rule-row')].map(row => ({
-    cat: row.dataset.cat,
+  // Match each rule row to its category by position, not by stale data-cat.
+  // syncRulesList keeps rule rows in the same relative order as non-Other categories,
+  // so positional matching is always correct even after a rename or drag reorder.
+  const nonOtherCats = configCache.categories.filter(c => c !== 'Other');
+  configCache.rules = [...document.querySelectorAll('.rule-row')].map((row, i) => ({
+    cat: nonOtherCats[i],
     keywords: row.querySelector('.rule-keywords-input').value
       .split(',').map(k => k.trim()).filter(Boolean),
-  })).filter(r => configCache.categories.includes(r.cat));
+  })).filter(r => r.cat);
 
   const res = await fetch('/api/config', {
     method: 'POST',

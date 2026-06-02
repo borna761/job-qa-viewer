@@ -231,6 +231,12 @@ app.post('/api/config', (req, res) => {
     const { categories, rules } = req.body;
     if (!Array.isArray(categories) || !Array.isArray(rules))
       return res.status(400).json({ error: 'Invalid config' });
+    // Validate individual items so a corrupt rule can't crash autoCategory later
+    if (!categories.every(c => typeof c === 'string' && c.length > 0))
+      return res.status(400).json({ error: 'categories must be non-empty strings' });
+    if (!rules.every(r => typeof r.cat === 'string' && Array.isArray(r.keywords) &&
+                          r.keywords.every(k => typeof k === 'string')))
+      return res.status(400).json({ error: 'each rule must have a string cat and string[] keywords' });
     saveConfig({ categories, rules });
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
