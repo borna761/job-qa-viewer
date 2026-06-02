@@ -1,0 +1,38 @@
+Tell me about a time a product you shipped didn't perform as expected. What happened and what did you do?
+
+We launched a redesigned search experience that we were confident in — usability tests had gone well, the design was cleaner, and engineers were proud of the performance improvements. Within a week of launch, search engagement dropped 18%.
+
+We dug into session recordings and discovered that power users had built habits around a filter interaction we'd removed in the redesign. They weren't lost — they just couldn't find what they were used to. We shipped a fast-follow within ten days that restored the filter in a new location and added a tooltip for new users. Engagement recovered fully within three weeks.
+
+The lesson was that our usability tests had been skewed toward new users. We added a standing requirement to include at least two long-tenured customers in any research that touches core workflows.
+
+
+
+
+How do you decide what metrics to track for a new feature?
+
+I start by asking what behaviour change the feature is supposed to drive. If I can't answer that clearly, the feature isn't ready to ship.
+
+From there I define a primary metric — usually one number that goes up if the feature is working — and two or three guardrail metrics that would tell me something is breaking elsewhere. I'm wary of tracking too many things because it makes it easy to cherry-pick the ones that look good.
+
+After launch I also look at leading indicators in the first 48–72 hours before waiting for statistically significant results. Things like error rates, support contacts, and session depth give early signal that something is badly wrong before it becomes a big problem.
+
+
+
+
+Describe how you've worked with sales or customer success to shape the product roadmap.
+
+At a previous company our sales team had a habit of bringing feature requests directly to engineering, which created noise and eroded trust. I introduced a lightweight process: a shared intake form and a monthly "field feedback" meeting where CS and sales could present patterns they were seeing, not individual requests.
+
+That change did two things. It forced the field teams to spot patterns rather than escalate one-offs, and it gave me a structured way to say no with context — I could show where a request ranked against other signals rather than just declining it. Within two quarters we went from ad-hoc pressure on engineers to a rhythm the whole company trusted.
+
+
+
+
+How do you approach talking to customers?
+
+I try to do at least two customer conversations a week, and I protect that time the same way I'd protect a design review or a sprint ceremony — it's not optional.
+
+In the conversations themselves I'm strict about not pitching or validating. I want to understand the job they're trying to do and where the current experience creates friction. I ask a lot of "walk me through the last time you did X" questions rather than "would you use a feature that did Y." The second type of question gets you polite agreement; the first gets you the truth.
+
+I take notes in a shared doc so the whole team builds context over time, not just me.

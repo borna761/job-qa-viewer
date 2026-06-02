@@ -1,0 +1,449 @@
+let allPairs = [];
+let categories = [];
+let searchQuery = '';
+let sortableInstances = [];
+let activeCategory = null;
+
+// ---- Utilities ----
+
+function esc(t) {
+  return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function highlight(text, q) {
+  if (!q) return esc(text);
+  const safe = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return esc(text).replace(new RegExp(`(${safe})`, 'gi'), '<mark>$1</mark>');
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2200);
+}
+
+function visiblePairs() {
+  const q = searchQuery.toLowerCase();
+  if (!q) return allPairs;
+  return allPairs.filter(p =>
+    (p.question && p.question.toLowerCase().includes(q)) ||
+    p.answer.toLowerCase().includes(q)
+  );
+}
+
+// ---- Render ----
+
+function render() {
+  const main = document.getElementById('main');
+  const pairs = visiblePairs();
+
+  if (!pairs.length) {
+    main.innerHTML = '<div class="empty">No results.</div>';
+    return;
+  }
+
+  const grouped = {};
+  categories.forEach(c => grouped[c] = []);
+  pairs.forEach(p => {
+    const cat = p.category || 'Other';
+    if (!grouped[cat]) grouped[cat] = [];
+    grouped[cat].push(p);
+  });
+
+  main.innerHTML = categories
+    .filter(c => grouped[c] && grouped[c].length > 0)
+    .map(cat => `
+      <div class="cat-section" data-cat="${esc(cat)}">
+        <div class="cat-header">
+          <span class="cat-title">${esc(cat)}</span>
+          <span class="cat-line"></span>
+          <span class="cat-count">${grouped[cat].length}</span>
+        </div>
+        <div class="qa-list" data-cat="${esc(cat)}">
+          ${grouped[cat].map(p => cardHTML(p)).join('')}
+        </div>
+      </div>
+    `).join('');
+
+  attachCardHandlers();
+  attachDragHandlers();
+}
+
+function catSelectHTML(current) {
+  return `<select class="cat-select" title="Category">
+    ${categories.map(c => `<option value="${esc(c)}" ${c === current ? 'selected' : ''}>${esc(c)}</option>`).join('')}
+  </select>`;
+}
+
+function cardHTML(p) {
+  return `
+    <div class="qa-card" data-id="${esc(p.id)}">
+      <div class="qa-card-head">
+        <svg class="drag-handle" width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+          <circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/>
+          <circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/>
+          <circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/>
+        </svg>
+        <div class="qa-question-text ${!p.question ? 'no-question' : ''}">
+          ${p.question ? highlight(p.question, searchQuery) : 'General response'}
+        </div>
+        <div class="card-meta">
+          ${catSelectHTML(p.category)}
+          <span class="source-badge">${esc(p.source)}</span>
+          <button class="btn-icon edit-btn" title="Edit">
+            <svg width="14" height="14" fill="none" viewBox="0 0 24 24">
+              <path d="M15.232 5.232 18.768 8.768M3 21l3.75-.75L18.232 8.768a2 2 0 0 0-2.536-2.536L3 17.25 3 21Z"
+                stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div class="qa-card-body">
+        <div class="qa-answer-text">${highlight(p.answer, searchQuery)}</div>
+      </div>
+    </div>
+  `;
+}
+
+// ---- Card handlers ----
+
+function attachCardHandlers() {
+  document.querySelectorAll('.edit-btn').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      enterEditMode(btn.closest('.qa-card'));
+    });
+  });
+
+  document.querySelectorAll('.cat-select').forEach(sel => {
+    sel.addEventListener('mousedown', e => e.stopPropagation());
+    sel.addEventListener('change', async () => {
+      const card = sel.closest('.qa-card');
+      const p = allPairs.find(x => x.id === card.dataset.id);
+      p.category = sel.value;
+      await saveOrder();
+      render();
+    });
+  });
+}
+
+// ---- Drag & Drop ----
+
+function attachDragHandlers() {
+  sortableInstances.forEach(s => s.destroy());
+  sortableInstances = [];
+
+  document.querySelectorAll('.qa-list').forEach(list => {
+    const instance = Sortable.create(list, {
+      group: 'qa',
+      handle: '.drag-handle',
+      animation: 150,
+      ghostClass: 'sortable-ghost',
+      dragClass: 'sortable-drag',
+      onEnd(evt) {
+        const movedId = evt.item.dataset.id;
+        const newCat  = evt.to.dataset.cat;
+        const movedPair = allPairs.find(p => p.id === movedId);
+        if (!movedPair) return;
+        movedPair.category = newCat;
+        evt.to.querySelectorAll('.qa-card').forEach((el, i) => {
+          const p = allPairs.find(x => x.id === el.dataset.id);
+          if (p) { p.category = newCat; p.sortIndex = i; }
+        });
+        saveOrder().then(() => renderSidebar());
+      },
+    });
+    sortableInstances.push(instance);
+  });
+}
+
+// ---- Order ----
+
+async function saveOrder() {
+  const catCounters = {};
+  const payload = allPairs.map(p => {
+    const cat = p.category;
+    if (!(cat in catCounters)) catCounters[cat] = 0;
+    p.sortIndex = catCounters[cat]++;
+    return { id: p.id, category: cat, sortIndex: p.sortIndex };
+  });
+  await fetch('/api/order', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
+
+// ---- Edit mode ----
+
+function enterEditMode(card) {
+  const p = allPairs.find(x => x.id === card.dataset.id);
+  card.classList.add('editing');
+
+  card.querySelector('.qa-card-head').innerHTML = `
+    <input class="edit-q" type="text" value="${esc(p.question || '')}" placeholder="Question (optional)">
+    <div class="card-meta"><span class="source-badge">${esc(p.source)}</span></div>
+  `;
+  card.querySelector('.qa-card-body').innerHTML = `
+    <textarea class="edit-a">${esc(p.answer)}</textarea>
+    <div class="edit-actions">
+      <button class="btn btn-secondary cancel-btn">Cancel</button>
+      <button class="btn btn-primary save-btn">Save</button>
+    </div>
+  `;
+
+  card.querySelector('.cancel-btn').addEventListener('click', () => render());
+
+  card.querySelector('.save-btn').addEventListener('click', async () => {
+    const question = card.querySelector('.edit-q').value.trim() || null;
+    const answer   = card.querySelector('.edit-a').value.trim();
+    const res = await fetch('/api/update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filePath: p.filePath, id: p.id, question, answer }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      p.question = question;
+      p.answer   = answer;
+      p.id       = data.newId;
+      await saveOrder();
+      showToast('Saved');
+      render();
+    } else {
+      showToast('Error saving');
+    }
+  });
+}
+
+// ---- Add panel ----
+
+const addPanel = document.getElementById('add-panel');
+
+document.getElementById('add-toggle').addEventListener('click', () => {
+  addPanel.classList.toggle('open');
+  if (addPanel.classList.contains('open')) document.getElementById('new-question').focus();
+});
+
+document.getElementById('add-cancel').addEventListener('click', () => addPanel.classList.remove('open'));
+
+document.getElementById('add-save').addEventListener('click', async () => {
+  const question = document.getElementById('new-question').value.trim() || null;
+  const answer   = document.getElementById('new-answer').value.trim();
+  if (!answer) { showToast('Answer is required'); return; }
+
+  const res = await fetch('/api/add-general', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ question, answer }),
+  });
+
+  if (res.ok) {
+    document.getElementById('new-question').value = '';
+    document.getElementById('new-answer').value   = '';
+    addPanel.classList.remove('open');
+    const data = await fetch('/api/data').then(r => r.json());
+    allPairs = data.pairs;
+    showToast('Added');
+    render();
+  } else {
+    showToast('Error saving');
+  }
+});
+
+// ---- Search ----
+
+document.getElementById('search').addEventListener('input', e => {
+  searchQuery = e.target.value;
+  render();
+  renderSidebar();
+});
+
+// ---- Sidebar ----
+
+function renderSidebar() {
+  const sidebar = document.getElementById('sidebar');
+  const pairs   = visiblePairs();
+  const counts  = {};
+  categories.forEach(c => counts[c] = 0);
+  pairs.forEach(p => { if (counts[p.category] !== undefined) counts[p.category]++; });
+
+  sidebar.innerHTML = `
+    <div class="nav-label">Categories</div>
+    <div class="nav-item ${activeCategory === null ? 'active' : ''}" data-cat="">
+      <span>All</span><span class="nav-count">${pairs.length}</span>
+    </div>
+    ${categories.filter(c => counts[c] > 0).map(c => `
+      <div class="nav-item ${activeCategory === c ? 'active' : ''}" data-cat="${esc(c)}">
+        <span>${esc(c)}</span><span class="nav-count">${counts[c]}</span>
+      </div>
+    `).join('')}
+  `;
+
+  sidebar.querySelectorAll('.nav-item').forEach(el => {
+    el.addEventListener('click', () => {
+      const cat = el.dataset.cat || null;
+      if (cat) {
+        const section = document.querySelector(`.cat-section[data-cat="${CSS.escape(cat)}"]`);
+        if (section) section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } else {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+      activeCategory = cat;
+      renderSidebar();
+    });
+  });
+
+  const bmac = document.createElement('div');
+  bmac.className = 'bmac-wrap';
+  bmac.innerHTML = `<a href="https://buymeacoffee.com/borna761" target="_blank" rel="noopener">
+    <img src="/assets/buymeacoffee-white.png" alt="Buy me a coffee">
+  </a>`;
+  sidebar.appendChild(bmac);
+}
+
+// ---- Scroll spy ----
+
+window.addEventListener('scroll', () => {
+  const sections = document.querySelectorAll('.cat-section');
+  let current = null;
+  sections.forEach(s => {
+    if (s.getBoundingClientRect().top <= 100) current = s.dataset.cat;
+  });
+  if (current !== activeCategory) {
+    activeCategory = current;
+    renderSidebar();
+  }
+}, { passive: true });
+
+// ---- Init ----
+
+fetch('/api/data').then(r => r.json()).then(data => {
+  allPairs   = data.pairs;
+  categories = data.categories;
+  render();
+  renderSidebar();
+});
+
+// ---- Settings modal ----
+
+let configCache = null;
+let catSortable = null;
+
+async function openSettings() {
+  configCache = await fetch('/api/config').then(r => r.json());
+  renderSettingsModal(configCache);
+  document.getElementById('settings-modal').classList.add('open');
+}
+
+function renderSettingsModal(config) {
+  // Categories
+  const catList = document.getElementById('cat-edit-list');
+  catList.innerHTML = config.categories.map((cat, i) => `
+    <div class="cat-edit-item" data-index="${i}">
+      <svg class="drag-handle" width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+        <circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/>
+        <circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/>
+        <circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/>
+      </svg>
+      <input class="cat-name-input" type="text" value="${esc(cat)}">
+      <button class="btn-icon-sm delete-cat-btn" title="Delete">
+        <svg width="14" height="14" fill="none" viewBox="0 0 24 24">
+          <path d="M18 6 6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+      </button>
+    </div>
+  `).join('');
+
+  catList.querySelectorAll('.delete-cat-btn').forEach((btn, i) => {
+    btn.addEventListener('click', () => {
+      config.categories.splice(i, 1);
+      config.rules = config.rules.filter(r => config.categories.includes(r.cat));
+      renderSettingsModal(config);
+    });
+  });
+
+  if (catSortable) catSortable.destroy();
+  catSortable = Sortable.create(catList, {
+    handle: '.drag-handle',
+    animation: 120,
+    onEnd() {
+      const newOrder = [...catList.querySelectorAll('.cat-name-input')].map(el => el.value);
+      config.categories = newOrder;
+      config.rules = [...config.rules].sort(
+        (a, b) => newOrder.indexOf(a.cat) - newOrder.indexOf(b.cat)
+      );
+    },
+  });
+
+  // Rules
+  const rulesList = document.getElementById('rules-list');
+  rulesList.innerHTML = config.categories
+    .filter(c => c !== 'Other')
+    .map(cat => {
+      const rule = config.rules.find(r => r.cat === cat);
+      const keywords = rule ? rule.keywords.join(', ') : '';
+      return `
+        <div class="rule-row" data-cat="${esc(cat)}">
+          <span class="rule-cat-label">${esc(cat)}</span>
+          <textarea class="rule-keywords-input" rows="2" placeholder="keyword one, keyword two…">${esc(keywords)}</textarea>
+        </div>
+      `;
+    }).join('');
+}
+
+document.getElementById('add-cat-btn').addEventListener('click', () => {
+  if (!configCache) return;
+  configCache.categories.push('New category');
+  renderSettingsModal(configCache);
+  // Focus the new input
+  const inputs = document.querySelectorAll('.cat-name-input');
+  inputs[inputs.length - 1].focus();
+  inputs[inputs.length - 1].select();
+});
+
+document.getElementById('settings-toggle').addEventListener('click', openSettings);
+document.getElementById('settings-close').addEventListener('click', () => {
+  document.getElementById('settings-modal').classList.remove('open');
+});
+document.getElementById('settings-cancel').addEventListener('click', () => {
+  document.getElementById('settings-modal').classList.remove('open');
+});
+document.getElementById('settings-modal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) e.currentTarget.classList.remove('open');
+});
+
+document.getElementById('settings-save').addEventListener('click', async () => {
+  if (!configCache) return;
+
+  // Read current category names from inputs (user may have typed)
+  const catInputs = [...document.querySelectorAll('.cat-name-input')];
+  configCache.categories = catInputs.map(el => el.value.trim()).filter(Boolean);
+
+  // Read rules from keyword textareas
+  configCache.rules = [...document.querySelectorAll('.rule-row')].map(row => ({
+    cat: row.dataset.cat,
+    keywords: row.querySelector('.rule-keywords-input').value
+      .split(',').map(k => k.trim()).filter(Boolean),
+  })).filter(r => configCache.categories.includes(r.cat));
+
+  const res = await fetch('/api/config', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(configCache),
+  });
+
+  if (res.ok) {
+    document.getElementById('settings-modal').classList.remove('open');
+    // Reload data so new categories/rules take effect
+    const data = await fetch('/api/data').then(r => r.json());
+    allPairs   = data.pairs;
+    categories = data.categories;
+    showToast('Settings saved');
+    render();
+    renderSidebar();
+  } else {
+    showToast('Error saving settings');
+  }
+});

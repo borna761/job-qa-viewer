@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Job Q&A</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+</head>
+<body>
+
+<header>
+  <svg width="20" height="20" fill="none" viewBox="0 0 24 24">
+    <rect x="3" y="5" width="18" height="14" rx="2" stroke="white" stroke-width="1.8"/>
+    <path d="M7 9h10M7 13h6" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+  </svg>
+  <h1>Job Q&A</h1>
+  <div class="search-wrap">
+    <svg width="14" height="14" fill="none" viewBox="0 0 24 24">
+      <circle cx="11" cy="11" r="7" stroke="white" stroke-width="2"/>
+      <path d="m16.5 16.5 4 4" stroke="white" stroke-width="2" stroke-linecap="round"/>
+    </svg>
+    <input type="text" id="search" placeholder="Search…" autocomplete="off">
+  </div>
+  <button class="btn-icon" id="settings-toggle" title="Settings" style="color:rgba(255,255,255,0.7)">
+    <svg width="18" height="18" fill="none" viewBox="0 0 24 24">
+      <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" stroke="currentColor" stroke-width="1.8"/>
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" stroke="currentColor" stroke-width="1.8"/>
+    </svg>
+  </button>
+  <button class="add-toggle" id="add-toggle">
+    <svg width="14" height="14" fill="none" viewBox="0 0 24 24">
+      <path d="M12 5v14M5 12h14" stroke="white" stroke-width="2.2" stroke-linecap="round"/>
+    </svg>
+    Add
+  </button>
+</header>
+
+<div id="add-panel">
+  <h3>New Q&A</h3>
+  <input type="text" id="new-question" placeholder="Question (optional)" autocomplete="off">
+  <textarea id="new-answer" placeholder="Your answer…"></textarea>
+  <div class="panel-actions">
+    <button class="btn btn-secondary" id="add-cancel">Cancel</button>
+    <button class="btn btn-primary" id="add-save">Save</button>
+  </div>
+</div>
+
+<div class="layout">
+  <aside id="sidebar"></aside>
+  <main id="main">
+    <div class="empty">Loading…</div>
+  </main>
+</div>
+
+<div class="modal-overlay" id="settings-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>Settings</h2>
+      <button class="modal-close" id="settings-close">
+        <svg width="18" height="18" fill="none" viewBox="0 0 24 24">
+          <path d="M18 6 6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div class="settings-section">
+        <h3>Categories</h3>
+        <div class="cat-edit-list" id="cat-edit-list"></div>
+        <button class="add-cat-btn" id="add-cat-btn">+ Add category</button>
+      </div>
+      <div class="settings-section">
+        <h3>Auto-categorisation keywords</h3>
+        <p style="font-size:0.8rem;color:#888;margin-bottom:12px">Comma-separated keywords matched against each question on first load. Checked in order — first match wins.</p>
+        <div class="rules-list" id="rules-list"></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" id="settings-cancel">Cancel</button>
+      <button class="btn btn-primary" id="settings-save">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="/app.js"></script>
+</body>
+</html>

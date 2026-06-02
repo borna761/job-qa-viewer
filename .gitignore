@@ -1,0 +1,12 @@
+node_modules/
+.DS_Store
+
+# Personal answer files — keep local, never commit
+data/*.txt
+order.json
+config.json
+
+# Sample files are force-tracked via git add -f
+!data/acme-corp.txt
+!data/nova-labs.txt
+!data/meridian-health.txt
