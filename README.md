@@ -2,7 +2,7 @@
 
 A local web app for organising and browsing your job application answers. Keep your Q&A pairs in plain `.txt` files, browse them by category, drag to reorder, and edit everything in the browser.
 
-![Job Q&A Viewer](https://github.com/user-attachments/assets/placeholder)
+![Job Q&A Viewer](public/assets/screenshot.png)
 
 ## Features
 
