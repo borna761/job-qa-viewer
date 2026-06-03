@@ -453,7 +453,7 @@ function renderCompaniesSection(companiesData) {
         value="${esc(c.name)}"
         data-file="${esc(c.file)}"
         data-original="${esc(c.name)}"
-        ${c.file === 'answers.txt' ? 'readonly title="Cannot rename My Answers"' : 'placeholder="Company name"'}>
+        placeholder="Company name">
     </div>
   `).join('');
 
