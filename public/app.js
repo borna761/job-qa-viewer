@@ -443,14 +443,59 @@ function renderCompaniesSection(companiesData) {
   if (!list) return;
   list.innerHTML = companiesData.map(c => `
     <div class="company-item">
-      <svg width="13" height="13" fill="none" viewBox="0 0 24 24">
+      <svg width="13" height="13" fill="none" viewBox="0 0 24 24" style="flex-shrink:0;color:#9ca3af">
         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6Z"
           stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
         <path d="M14 2v6h6" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
       </svg>
-      <span>${esc(c.name)}</span>
+      <input class="cat-name-input company-name-input"
+        type="text"
+        value="${esc(c.name)}"
+        data-file="${esc(c.file)}"
+        data-original="${esc(c.name)}"
+        ${c.file === 'answers.txt' ? 'readonly title="Cannot rename My Answers"' : 'placeholder="Company name"'}>
     </div>
   `).join('');
+
+  list.querySelectorAll('.company-name-input:not([readonly])').forEach(input => {
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter')  { e.preventDefault(); input.blur(); }
+      if (e.key === 'Escape') { input.value = input.dataset.original; input.blur(); }
+    });
+
+    input.addEventListener('blur', async () => {
+      const newName = input.value.trim();
+      const oldName = input.dataset.original;
+      const oldFile = input.dataset.file;
+      if (!newName || newName === oldName) { input.value = oldName; return; }
+
+      const res = await fetch('/api/rename-company', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ oldFile, newName }),
+      });
+      const data = await res.json();
+
+      if (res.ok) {
+        // Update in-memory state
+        const entry = companies.find(c => c.file === oldFile);
+        if (entry) { entry.file = data.file; entry.name = data.name; }
+        allPairs.forEach(p => { if (p.source === oldName) p.source = data.name; });
+        if (activeCompany === oldName) activeCompany = data.name;
+        // Update input attributes so a second rename works
+        input.value = data.name;
+        input.dataset.file = data.file;
+        input.dataset.original = data.name;
+        populateAddPanelSelects();
+        render();
+        renderSidebar();
+        showToast(`Renamed to "${data.name}"`);
+      } else {
+        input.value = oldName;
+        showToast(data.error || 'Error renaming');
+      }
+    });
+  });
 }
 
 function renderSettingsModal(config, companiesData) {

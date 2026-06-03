@@ -230,7 +230,7 @@ app.get('/api/companies', (req, res) => {
     const files = fs.readdirSync(DATA_DIR)
       .filter(f => f.endsWith('.txt'))
       .sort((a, b) => a === 'answers.txt' ? -1 : b === 'answers.txt' ? 1 : a.localeCompare(b));
-    res.json(files.map(f => ({ file: f, name: fileLabel(f) })));
+    res.json(files.map(f => ({ file: f, name: f === 'answers.txt' ? 'My Answers' : fileLabel(f) })));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -245,6 +245,28 @@ app.post('/api/add-company', (req, res) => {
   try {
     fs.writeFileSync(filePath, '', 'utf8');
     res.json({ ok: true, file: slug + '.txt', name: fileLabel(slug + '.txt') });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/rename-company', (req, res) => {
+  const { oldFile, newName } = req.body;
+  if (!oldFile || !newName || typeof oldFile !== 'string' || typeof newName !== 'string')
+    return res.status(400).json({ error: 'oldFile and newName are required' });
+  if (oldFile === 'answers.txt')
+    return res.status(400).json({ error: 'Cannot rename My Answers' });
+  const safeOld = path.basename(oldFile);
+  if (!safeOld.endsWith('.txt')) return res.status(400).json({ error: 'Invalid file' });
+  const oldPath = path.join(DATA_DIR, safeOld);
+  if (!oldPath.startsWith(DATA_DIR + path.sep)) return res.status(400).json({ error: 'Invalid file' });
+  if (!fs.existsSync(oldPath)) return res.status(404).json({ error: 'Company not found' });
+  const slug = newName.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  if (!slug) return res.status(400).json({ error: 'Invalid name' });
+  const newFile = slug + '.txt';
+  const newPath = path.join(DATA_DIR, newFile);
+  if (fs.existsSync(newPath)) return res.status(400).json({ error: 'A company with that name already exists' });
+  try {
+    fs.renameSync(oldPath, newPath);
+    res.json({ ok: true, file: newFile, name: fileLabel(newFile) });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
