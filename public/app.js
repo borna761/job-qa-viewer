@@ -4,6 +4,7 @@ let companies  = [];
 let searchQuery = '';
 let sortableInstances = [];
 let activeCategory = null;
+let activeCompany  = null;
 
 // ---- Add-panel helpers ----
 
@@ -54,11 +55,12 @@ function showToast(msg) {
 
 function visiblePairs() {
   const q = searchQuery.toLowerCase();
-  if (!q) return allPairs;
-  return allPairs.filter(p =>
-    (p.question && p.question.toLowerCase().includes(q)) ||
-    p.answer.toLowerCase().includes(q)
-  );
+  return allPairs.filter(p => {
+    if (activeCompany && p.source !== activeCompany) return false;
+    if (!q) return true;
+    return (p.question && p.question.toLowerCase().includes(q)) ||
+           p.answer.toLowerCase().includes(q);
+  });
 }
 
 // ---- Render ----
@@ -316,23 +318,49 @@ document.getElementById('search').addEventListener('input', e => {
 function renderSidebar() {
   const sidebar = document.getElementById('sidebar');
   const pairs   = visiblePairs();
-  const counts  = {};
-  categories.forEach(c => counts[c] = 0);
-  pairs.forEach(p => { if (counts[p.category] !== undefined) counts[p.category]++; });
+
+  // Category counts from currently visible pairs (respects both filters)
+  const catCounts = {};
+  categories.forEach(c => catCounts[c] = 0);
+  pairs.forEach(p => { if (catCounts[p.category] !== undefined) catCounts[p.category]++; });
+
+  // Company counts from search-filtered pairs only (independent of company filter)
+  const q = searchQuery.toLowerCase();
+  const searchPairs = q
+    ? allPairs.filter(p =>
+        (p.question && p.question.toLowerCase().includes(q)) ||
+        p.answer.toLowerCase().includes(q))
+    : allPairs;
+  const companyCounts = {};
+  companies.forEach(c => companyCounts[c.name] = 0);
+  searchPairs.forEach(p => { if (p.source in companyCounts) companyCounts[p.source]++; });
 
   sidebar.innerHTML = `
     <div class="nav-label">Categories</div>
     <div class="nav-item ${activeCategory === null ? 'active' : ''}" data-cat="">
       <span>All</span><span class="nav-count">${pairs.length}</span>
     </div>
-    ${categories.filter(c => counts[c] > 0).map(c => `
+    ${categories.filter(c => catCounts[c] > 0).map(c => `
       <div class="nav-item ${activeCategory === c ? 'active' : ''}" data-cat="${esc(c)}">
-        <span>${esc(c)}</span><span class="nav-count">${counts[c]}</span>
+        <span>${esc(c)}</span><span class="nav-count">${catCounts[c]}</span>
       </div>
     `).join('')}
+    ${companies.length ? `
+      <div class="nav-divider"></div>
+      <div class="nav-label">Companies</div>
+      <div class="nav-item nav-company ${activeCompany === null ? 'active' : ''}" data-company="">
+        <span>All</span><span class="nav-count">${searchPairs.length}</span>
+      </div>
+      ${companies.filter(c => companyCounts[c.name] > 0).map(c => `
+        <div class="nav-item nav-company ${activeCompany === c.name ? 'active' : ''}" data-company="${esc(c.name)}">
+          <span>${esc(c.name)}</span><span class="nav-count">${companyCounts[c.name]}</span>
+        </div>
+      `).join('')}
+    ` : ''}
   `;
 
-  sidebar.querySelectorAll('.nav-item').forEach(el => {
+  // Category items — scroll to section
+  sidebar.querySelectorAll('.nav-item:not(.nav-company)').forEach(el => {
     el.addEventListener('click', () => {
       const cat = el.dataset.cat || null;
       if (cat) {
@@ -342,6 +370,18 @@ function renderSidebar() {
         window.scrollTo({ top: 0, behavior: 'smooth' });
       }
       activeCategory = cat;
+      renderSidebar();
+    });
+  });
+
+  // Company items — filter (click active company again to deselect)
+  sidebar.querySelectorAll('.nav-company').forEach(el => {
+    el.addEventListener('click', () => {
+      const company = el.dataset.company || null;
+      activeCompany  = (company && activeCompany !== company) ? company : null;
+      activeCategory = null;
+      window.scrollTo({ top: 0, behavior: 'instant' });
+      render();
       renderSidebar();
     });
   });
