@@ -1,0 +1,36 @@
+Why do you want to work at Acme Corp specifically?
+
+I've followed Acme's trajectory since the Series B. What stands out is that the product has stayed focused even as the company scaled — most companies at this stage start bolting on features to chase adjacent markets, and Acme hasn't done that. That discipline is rare and it usually comes from the top. I want to work somewhere that still treats focus as a competitive advantage.
+
+On the role itself, the combination of early-stage infrastructure work with direct customer exposure is exactly where I do my best work. I get bored when I'm too far from users, and I get frustrated when there's no room to build things properly. This looks like the right balance.
+
+
+
+
+Tell me about a time you had to kill a feature or project you'd championed.
+
+About a year into a previous role I pushed hard for a notification system I was convinced users wanted. We built it over six weeks, shipped it, and almost no one turned it on. The opt-in rate was under 4%.
+
+I'd made the classic mistake of confusing what users said they wanted with what they'd actually use. In interviews they told me notifications would help them — but in practice the friction of changing a default was higher than the value they got. I should have tested with a subset and measured behaviour, not asked people to imagine it.
+
+We deprecated the feature three months later. I presented the post-mortem to the whole company and used it to establish a principle we still follow: no feature ships without a defined adoption threshold and a sunset plan if it misses.
+
+
+
+
+How do you think about technical debt when prioritising the roadmap?
+
+I treat tech debt the same way I treat any other cost — it's not a separate category that engineering manages, it's a product concern because it affects how fast we can move and how reliable the experience is for users.
+
+In practice that means I keep a small but standing allocation for debt work in every sprint, sized based on how much recent velocity loss I can attribute to it. I don't let it grow into a "big refactor quarter" because those almost never happen and teams lose trust in the roadmap when they see maintenance work perpetually deprioritised.
+
+The conversation I have with stakeholders is: this work isn't slowing us down this sprint, it's what keeps us from slowing down next quarter.
+
+
+
+
+What does good product intuition look like to you?
+
+It's not the ability to predict what users want — that's too mystical. Good product intuition is a well-calibrated model of your user's context, constraints, and goals that you've built up through observation. It lets you generate plausible hypotheses faster and filter bad ideas earlier.
+
+The best signal that someone has it is that they can explain why something will or won't work in terms of user behaviour, not just personal taste. "I think users won't notice this" is intuition. "Users in our segment are context-switching constantly and won't stop to read this tooltip" is informed intuition. The second kind is actually useful in a room.
