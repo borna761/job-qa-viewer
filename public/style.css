@@ -50,7 +50,11 @@ header h1 { font-size: 1.1rem; font-weight: 600; flex: 1; }
 #add-panel textarea { min-height: 90px; resize: vertical; margin-top: 8px; }
 .add-panel-meta { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
 .add-meta-select { font-size: 0.78rem; border-radius: 10px; border: none; padding: 4px 8px; cursor: pointer; outline: none; font-family: inherit; }
-.source-select { background: #f0f0f0; color: #555; }
+.source-select {
+  font-size: 0.68rem; background: #f0f0f0; color: #888;
+  border: none; border-radius: 10px; padding: 2px 7px;
+  cursor: pointer; outline: none; font-family: inherit;
+}
 .panel-actions { display: flex; gap: 8px; margin-top: 10px; justify-content: flex-end; }
 
 /* Layout */

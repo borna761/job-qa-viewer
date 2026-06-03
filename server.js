@@ -268,6 +268,29 @@ app.post('/api/rename-company', (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+app.post('/api/move-entry', (req, res) => {
+  const { fromFile, toFile, id } = req.body;
+  if (!fromFile || !toFile || !id) return res.status(400).json({ error: 'fromFile, toFile, and id are required' });
+  if (fromFile === toFile) return res.json({ ok: true });
+  const fromPath = path.join(DATA_DIR, path.basename(fromFile));
+  const toPath   = path.join(DATA_DIR, path.basename(toFile));
+  if (!fromPath.startsWith(DATA_DIR + path.sep) || !toPath.startsWith(DATA_DIR + path.sep))
+    return res.status(400).json({ error: 'Invalid file path' });
+  if (!fs.existsSync(fromPath)) return res.status(404).json({ error: 'Source file not found' });
+  if (!fs.existsSync(toPath))   return res.status(404).json({ error: 'Destination file not found' });
+  try {
+    const fromPairs = parseQA(readTxtFile(fromPath)).filter(p => p.question || p.answer.length > 50);
+    const idx = fromPairs.findIndex(p => pairId(p) === id);
+    if (idx === -1) return res.status(404).json({ error: 'Entry not found' });
+    const [moved] = fromPairs.splice(idx, 1);
+    fs.writeFileSync(fromPath, serializeQA(fromPairs), 'utf8');
+    const toPairs = parseQA(readTxtFile(toPath)).filter(p => p.question || p.answer.length > 50);
+    toPairs.push(moved);
+    fs.writeFileSync(toPath, serializeQA(toPairs), 'utf8');
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.post('/api/update', (req, res) => {
   const { filePath, id, question, answer } = req.body;
   // Fix 4: resolve the path before checking so '../' sequences can't escape DATA_DIR
