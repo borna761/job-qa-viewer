@@ -42,6 +42,10 @@
   <input type="text" id="new-question" placeholder="Question (optional)" autocomplete="off">
   <textarea id="new-answer" placeholder="Your answer…"></textarea>
   <div class="answer-count" id="new-answer-count"></div>
+  <div class="add-panel-meta">
+    <select id="new-category" class="cat-select add-meta-select" title="Category"></select>
+    <select id="new-source" class="source-select add-meta-select" title="Company / Source"></select>
+  </div>
   <div class="panel-actions">
     <button class="btn btn-secondary" id="add-cancel">Cancel</button>
     <button class="btn btn-primary" id="add-save">Save</button>
@@ -70,6 +74,14 @@
         <h3>Categories</h3>
         <div class="cat-edit-list" id="cat-edit-list"></div>
         <button class="add-cat-btn" id="add-cat-btn">+ Add category</button>
+      </div>
+      <div class="settings-section">
+        <h3>Companies</h3>
+        <div class="companies-list" id="companies-list-settings"></div>
+        <div class="add-company-row">
+          <input id="new-company-input" type="text" placeholder="Company name…" autocomplete="off">
+          <button class="btn btn-primary" id="add-company-btn">Add</button>
+        </div>
       </div>
       <div class="settings-section">
         <h3>Auto-categorisation keywords</h3>

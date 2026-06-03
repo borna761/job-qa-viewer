@@ -1,8 +1,30 @@
 let allPairs = [];
 let categories = [];
+let companies  = [];
 let searchQuery = '';
 let sortableInstances = [];
 let activeCategory = null;
+let activeCompany  = null;
+
+// ---- Add-panel helpers ----
+
+function populateAddPanelSelects() {
+  const catSel = document.getElementById('new-category');
+  catSel.innerHTML = `<option value="">Auto-categorise</option>` +
+    categories.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+
+  const srcSel = document.getElementById('new-source');
+  srcSel.innerHTML = companies
+    .map(c => `<option value="${esc(c.file)}">${esc(c.name)}</option>`).join('');
+}
+
+function highlightNewCard(id) {
+  const card = document.querySelector(`.qa-card[data-id="${CSS.escape(id)}"]`);
+  if (!card) return;
+  card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  card.classList.add('newly-added');
+  card.addEventListener('animationend', () => card.classList.remove('newly-added'), { once: true });
+}
 
 // ---- Utilities ----
 
@@ -33,11 +55,12 @@ function showToast(msg) {
 
 function visiblePairs() {
   const q = searchQuery.toLowerCase();
-  if (!q) return allPairs;
-  return allPairs.filter(p =>
-    (p.question && p.question.toLowerCase().includes(q)) ||
-    p.answer.toLowerCase().includes(q)
-  );
+  return allPairs.filter(p => {
+    if (activeCompany && p.source !== activeCompany) return false;
+    if (!q) return true;
+    return (p.question && p.question.toLowerCase().includes(q)) ||
+           p.answer.toLowerCase().includes(q);
+  });
 }
 
 // ---- Render ----
@@ -84,6 +107,14 @@ function catSelectHTML(current) {
   </select>`;
 }
 
+function sourceSelectHTML(current) {
+  // value = c.file (filename) so the move handler can look up by file unambiguously,
+  // even if two companies share a display name. Matches populateAddPanelSelects.
+  return `<select class="source-select card-source-select" title="Company">
+    ${companies.map(c => `<option value="${esc(c.file)}" ${c.name === current ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
+  </select>`;
+}
+
 function cardHTML(p) {
   return `
     <div class="qa-card" data-id="${esc(p.id)}">
@@ -98,7 +129,7 @@ function cardHTML(p) {
         </div>
         <div class="card-meta">
           ${catSelectHTML(p.category)}
-          <span class="source-badge">${esc(p.source)}</span>
+          ${sourceSelectHTML(p.source)}
           <button class="btn-icon edit-btn" title="Edit">
             <svg width="14" height="14" fill="none" viewBox="0 0 24 24">
               <path d="M15.232 5.232 18.768 8.768M3 21l3.75-.75L18.232 8.768a2 2 0 0 0-2.536-2.536L3 17.25 3 21Z"
@@ -133,6 +164,34 @@ function attachCardHandlers() {
       p.category = sel.value;
       await saveOrder();
       render();
+    });
+  });
+
+  document.querySelectorAll('.card-source-select').forEach(sel => {
+    sel.addEventListener('mousedown', e => e.stopPropagation());
+    sel.addEventListener('change', async () => {
+      const card = sel.closest('.qa-card');
+      const p = allPairs.find(x => x.id === card.dataset.id);
+      const newFile  = sel.value;                                 // c.file from option value
+      const fromComp = companies.find(c => c.name === p.source); // look up current by display name
+      const toComp   = companies.find(c => c.file === newFile);  // look up target by file
+      if (!fromComp || !toComp || fromComp.file === newFile) return;
+      const res = await fetch('/api/move-entry', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fromFile: fromComp.file, toFile: toComp.file, id: p.id }),
+      });
+      if (res.ok) {
+        p.source   = toComp.name;
+        p.filePath = p.filePath.slice(0, -fromComp.file.length) + toComp.file;
+        await saveOrder();
+        showToast(`Moved to ${newSource}`);
+        render();
+        renderSidebar();
+      } else {
+        sel.value = fromComp.file;  // restore to original file value
+        showToast('Error moving entry');
+      }
     });
   });
 }
@@ -255,23 +314,30 @@ document.getElementById('add-cancel').addEventListener('click', () => addPanel.c
 document.getElementById('add-save').addEventListener('click', async () => {
   const question = document.getElementById('new-question').value.trim() || null;
   const answer   = document.getElementById('new-answer').value.trim();
+  const category = document.getElementById('new-category').value || null;
+  const source   = document.getElementById('new-source').value   || null;
   if (!answer) { showToast('Answer is required'); return; }
 
   const res = await fetch('/api/add-general', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ question, answer }),
+    body: JSON.stringify({ question, answer, source, category }),
   });
 
   if (res.ok) {
+    const { newId } = await res.json();
     document.getElementById('new-question').value = '';
     document.getElementById('new-answer').value   = '';
     document.getElementById('new-answer-count').textContent = '';
     addPanel.classList.remove('open');
     const data = await fetch('/api/data').then(r => r.json());
     allPairs = data.pairs;
+    activeCompany  = null;   // ensure the new card is visible regardless of filter
+    activeCategory = null;
     showToast('Added');
     render();
+    renderSidebar();
+    if (newId) highlightNewCard(newId);
   } else {
     showToast('Error saving');
   }
@@ -290,23 +356,49 @@ document.getElementById('search').addEventListener('input', e => {
 function renderSidebar() {
   const sidebar = document.getElementById('sidebar');
   const pairs   = visiblePairs();
-  const counts  = {};
-  categories.forEach(c => counts[c] = 0);
-  pairs.forEach(p => { if (counts[p.category] !== undefined) counts[p.category]++; });
+
+  // Category counts from currently visible pairs (respects both filters)
+  const catCounts = {};
+  categories.forEach(c => catCounts[c] = 0);
+  pairs.forEach(p => { if (catCounts[p.category] !== undefined) catCounts[p.category]++; });
+
+  // Company counts from search-filtered pairs only (independent of company filter)
+  const q = searchQuery.toLowerCase();
+  const searchPairs = q
+    ? allPairs.filter(p =>
+        (p.question && p.question.toLowerCase().includes(q)) ||
+        p.answer.toLowerCase().includes(q))
+    : allPairs;
+  const companyCounts = {};
+  companies.forEach(c => companyCounts[c.name] = 0);
+  searchPairs.forEach(p => { if (p.source in companyCounts) companyCounts[p.source]++; });
 
   sidebar.innerHTML = `
     <div class="nav-label">Categories</div>
     <div class="nav-item ${activeCategory === null ? 'active' : ''}" data-cat="">
       <span>All</span><span class="nav-count">${pairs.length}</span>
     </div>
-    ${categories.filter(c => counts[c] > 0).map(c => `
+    ${categories.filter(c => catCounts[c] > 0).map(c => `
       <div class="nav-item ${activeCategory === c ? 'active' : ''}" data-cat="${esc(c)}">
-        <span>${esc(c)}</span><span class="nav-count">${counts[c]}</span>
+        <span>${esc(c)}</span><span class="nav-count">${catCounts[c]}</span>
       </div>
     `).join('')}
+    ${companies.length ? `
+      <div class="nav-divider"></div>
+      <div class="nav-label">Companies</div>
+      <div class="nav-item nav-company ${activeCompany === null ? 'active' : ''}" data-company="">
+        <span>All</span><span class="nav-count">${searchPairs.length}</span>
+      </div>
+      ${companies.filter(c => companyCounts[c.name] > 0).map(c => `
+        <div class="nav-item nav-company ${activeCompany === c.name ? 'active' : ''}" data-company="${esc(c.name)}">
+          <span>${esc(c.name)}</span><span class="nav-count">${companyCounts[c.name]}</span>
+        </div>
+      `).join('')}
+    ` : ''}
   `;
 
-  sidebar.querySelectorAll('.nav-item').forEach(el => {
+  // Category items — scroll to section
+  sidebar.querySelectorAll('.nav-item:not(.nav-company)').forEach(el => {
     el.addEventListener('click', () => {
       const cat = el.dataset.cat || null;
       if (cat) {
@@ -316,6 +408,18 @@ function renderSidebar() {
         window.scrollTo({ top: 0, behavior: 'smooth' });
       }
       activeCategory = cat;
+      renderSidebar();
+    });
+  });
+
+  // Company items — filter (click active company again to deselect)
+  sidebar.querySelectorAll('.nav-company').forEach(el => {
+    el.addEventListener('click', () => {
+      const company = el.dataset.company || null;
+      activeCompany  = (company && activeCompany !== company) ? company : null;
+      activeCategory = null;
+      window.scrollTo({ top: 0, behavior: 'instant' });
+      render();
       renderSidebar();
     });
   });
@@ -344,9 +448,14 @@ window.addEventListener('scroll', () => {
 
 // ---- Init ----
 
-fetch('/api/data').then(r => r.json()).then(data => {
+Promise.all([
+  fetch('/api/data').then(r => r.json()),
+  fetch('/api/companies').then(r => r.json()),
+]).then(([data, companiesData]) => {
   allPairs   = data.pairs;
   categories = data.categories;
+  companies  = companiesData;
+  populateAddPanelSelects();
   render();
   renderSidebar();
 });
@@ -358,11 +467,77 @@ let catSortable = null;
 
 async function openSettings() {
   configCache = await fetch('/api/config').then(r => r.json());
-  renderSettingsModal(configCache);
+  renderSettingsModal(configCache, companies);
   document.getElementById('settings-modal').classList.add('open');
 }
 
-function renderSettingsModal(config) {
+function renderCompaniesSection(companiesData) {
+  const list = document.getElementById('companies-list-settings');
+  if (!list) return;
+  list.innerHTML = companiesData.map(c => `
+    <div class="company-item">
+      <svg width="13" height="13" fill="none" viewBox="0 0 24 24" style="flex-shrink:0;color:#9ca3af">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6Z"
+          stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+        <path d="M14 2v6h6" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+      </svg>
+      <input class="company-name-input"
+        type="text"
+        value="${esc(c.name)}"
+        data-file="${esc(c.file)}"
+        data-original="${esc(c.name)}"
+        placeholder="Company name">
+    </div>
+  `).join('');
+
+  list.querySelectorAll('.company-name-input').forEach(input => {
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter')  { e.preventDefault(); input.blur(); }
+      if (e.key === 'Escape') { input.value = input.dataset.original; input.blur(); }
+    });
+
+    input.addEventListener('blur', async () => {
+      const newName = input.value.trim();
+      const oldName = input.dataset.original;
+      const oldFile = input.dataset.file;
+      if (!newName || newName === oldName) { input.value = oldName; return; }
+
+      const res = await fetch('/api/rename-company', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ oldFile, newName }),
+      });
+      const data = await res.json();
+
+      if (res.ok) {
+        // Update in-memory state
+        const entry = companies.find(c => c.file === oldFile);
+        if (entry) { entry.file = data.file; entry.name = data.name; }
+        allPairs.forEach(p => {
+          if (p.source === oldName) {
+            p.source   = data.name;
+            p.filePath = p.filePath.slice(0, -oldFile.length) + data.file;
+          }
+        });
+        if (activeCompany === oldName) activeCompany = data.name;
+        // Update input attributes so a second rename works
+        input.value = data.name;
+        input.dataset.file = data.file;
+        input.dataset.original = data.name;
+        populateAddPanelSelects();
+        render();
+        renderSidebar();
+        showToast(`Renamed to "${data.name}"`);
+      } else {
+        input.value = oldName;
+        showToast(data.error || 'Error renaming');
+      }
+    });
+  });
+}
+
+function renderSettingsModal(config, companiesData) {
+  renderCompaniesSection(companiesData);
   // Categories
   const catList = document.getElementById('cat-edit-list');
   catList.innerHTML = config.categories.map((cat, i) => `
@@ -385,7 +560,7 @@ function renderSettingsModal(config) {
     btn.addEventListener('click', () => {
       config.categories.splice(i, 1);
       config.rules = config.rules.filter(r => config.categories.includes(r.cat));
-      renderSettingsModal(config);
+      renderSettingsModal(config, companies);
     });
   });
 
@@ -434,11 +609,32 @@ function syncRulesList(config) {
 document.getElementById('add-cat-btn').addEventListener('click', () => {
   if (!configCache) return;
   configCache.categories.push('New category');
-  renderSettingsModal(configCache);
+  renderSettingsModal(configCache, companies);
   // Focus the new input
   const inputs = document.querySelectorAll('.cat-name-input');
   inputs[inputs.length - 1].focus();
   inputs[inputs.length - 1].select();
+});
+
+document.getElementById('add-company-btn').addEventListener('click', async () => {
+  const input = document.getElementById('new-company-input');
+  const name = input.value.trim();
+  if (!name) { showToast('Enter a company name'); return; }
+  const res = await fetch('/api/add-company', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  });
+  const data = await res.json();
+  if (res.ok) {
+    companies.push({ file: data.file, name: data.name });
+    input.value = '';
+    renderCompaniesSection(companies);
+    populateAddPanelSelects();
+    showToast(`Added "${data.name}"`);
+  } else {
+    showToast(data.error || 'Error adding company');
+  }
 });
 
 document.getElementById('settings-toggle').addEventListener('click', openSettings);
