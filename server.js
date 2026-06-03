@@ -130,6 +130,16 @@ function fileLabel(filename) {
   return filename.replace('.txt', '').replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
 
+// Canonical display name for a data file, respecting saved overrides.
+function displayName(file, companyNames) {
+  return companyNames[file] || (file === 'answers.txt' ? 'My Answers' : fileLabel(file));
+}
+
+// Convert a human name to a safe slug used as the txt filename stem.
+function nameToSlug(name) {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
 function getAll() {
   const config = loadConfig();
   const raw = [];
@@ -138,12 +148,11 @@ function getAll() {
     .filter(f => f.endsWith('.txt'))
     .sort((a, b) => a === 'answers.txt' ? -1 : b === 'answers.txt' ? 1 : a.localeCompare(b));
 
-  const companyNames = config.companyNames || {};
-  const sourceName = f => companyNames[f] || (f === 'answers.txt' ? 'My Answers' : fileLabel(f));
+  const companyNames = config.companyNames;
 
   for (const file of files) {
     const filePath = path.join(DATA_DIR, file);
-    const source = sourceName(file);
+    const source = displayName(file, companyNames);
     const text = readTxtFile(filePath);
     parseQA(text).forEach((p, idx) => {
       if (p.question || p.answer.length > 50)
@@ -238,12 +247,10 @@ app.post('/api/add-general', (req, res) => {
 app.get('/api/companies', (req, res) => {
   try {
     const cfg   = loadConfig();
-    const names = cfg.companyNames || {};
     const files = fs.readdirSync(DATA_DIR)
       .filter(f => f.endsWith('.txt'))
       .sort((a, b) => a === 'answers.txt' ? -1 : b === 'answers.txt' ? 1 : a.localeCompare(b));
-    const fallback = f => f === 'answers.txt' ? 'My Answers' : fileLabel(f);
-    res.json(files.map(f => ({ file: f, name: names[f] || fallback(f) })));
+    res.json(files.map(f => ({ file: f, name: displayName(f, cfg.companyNames) })));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -252,7 +259,7 @@ app.post('/api/add-company', (req, res) => {
   if (!name || typeof name !== 'string' || !name.trim())
     return res.status(400).json({ error: 'Name is required' });
   const trimmed = name.trim();
-  const slug = trimmed.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  const slug = nameToSlug(trimmed);
   if (!slug) return res.status(400).json({ error: 'Invalid name' });
   const file = slug + '.txt';
   const filePath = path.join(DATA_DIR, file);
@@ -260,7 +267,6 @@ app.post('/api/add-company', (req, res) => {
   try {
     fs.writeFileSync(filePath, '', 'utf8');
     const cfg = loadConfig();
-    cfg.companyNames = cfg.companyNames || {};
     cfg.companyNames[file] = trimmed;
     saveConfig(cfg);
     res.json({ ok: true, file, name: trimmed });
@@ -277,7 +283,7 @@ app.post('/api/rename-company', (req, res) => {
   if (!oldPath.startsWith(DATA_DIR + path.sep)) return res.status(400).json({ error: 'Invalid file' });
   if (!fs.existsSync(oldPath)) return res.status(404).json({ error: 'Company not found' });
   const trimmed = newName.trim();
-  const slug = trimmed.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  const slug = nameToSlug(trimmed);
   if (!slug) return res.status(400).json({ error: 'Invalid name' });
   const newFile = slug + '.txt';
   const newPath = path.join(DATA_DIR, newFile);
@@ -289,7 +295,6 @@ app.post('/api/rename-company', (req, res) => {
     }
     // Always store the exact display name chosen by the user
     const cfg = loadConfig();
-    cfg.companyNames = cfg.companyNames || {};
     delete cfg.companyNames[safeOld];
     cfg.companyNames[newFile] = trimmed;
     saveConfig(cfg);
@@ -300,22 +305,25 @@ app.post('/api/rename-company', (req, res) => {
 app.post('/api/move-entry', (req, res) => {
   const { fromFile, toFile, id } = req.body;
   if (!fromFile || !toFile || !id) return res.status(400).json({ error: 'fromFile, toFile, and id are required' });
-  if (fromFile === toFile) return res.json({ ok: true });
   const fromPath = path.join(DATA_DIR, path.basename(fromFile));
   const toPath   = path.join(DATA_DIR, path.basename(toFile));
+  // Guard after normalisation so 'foo.txt' vs './foo.txt' is correctly caught
+  if (fromPath === toPath) return res.json({ ok: true });
   if (!fromPath.startsWith(DATA_DIR + path.sep) || !toPath.startsWith(DATA_DIR + path.sep))
     return res.status(400).json({ error: 'Invalid file path' });
   if (!fs.existsSync(fromPath)) return res.status(404).json({ error: 'Source file not found' });
   if (!fs.existsSync(toPath))   return res.status(404).json({ error: 'Destination file not found' });
   try {
+    // Read both files before writing either — no destructive write happens
+    // until we know both reads succeeded and the entry exists.
     const fromPairs = parseQA(readTxtFile(fromPath)).filter(p => p.question || p.answer.length > 50);
     const idx = fromPairs.findIndex(p => pairId(p) === id);
     if (idx === -1) return res.status(404).json({ error: 'Entry not found' });
-    const [moved] = fromPairs.splice(idx, 1);
-    fs.writeFileSync(fromPath, serializeQA(fromPairs), 'utf8');
     const toPairs = parseQA(readTxtFile(toPath)).filter(p => p.question || p.answer.length > 50);
+    const [moved] = fromPairs.splice(idx, 1);
     toPairs.push(moved);
-    fs.writeFileSync(toPath, serializeQA(toPairs), 'utf8');
+    fs.writeFileSync(fromPath, serializeQA(fromPairs), 'utf8');
+    fs.writeFileSync(toPath,   serializeQA(toPairs),   'utf8');
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -355,7 +363,7 @@ app.post('/api/config', (req, res) => {
                           r.keywords.every(k => typeof k === 'string')))
       return res.status(400).json({ error: 'each rule must have a string cat and string[] keywords' });
     const existing = loadConfig();
-    saveConfig({ categories, rules, companyNames: existing.companyNames || {} });
+    saveConfig({ categories, rules, companyNames: existing.companyNames });
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
