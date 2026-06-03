@@ -84,6 +84,8 @@ aside {
 .nav-item:hover { background: #f4f6f9; }
 .nav-item.active { border-left-color: #4f46e5; background: #eef2ff; color: #4f46e5; font-weight: 600; }
 
+.nav-divider { height: 1px; background: #e8ecf0; margin: 8px 18px; }
+
 .nav-count {
   font-size: 0.7rem; background: #f0f0f0; color: #999;
   padding: 1px 6px; border-radius: 9px; font-weight: 500;
