@@ -448,7 +448,7 @@ function renderCompaniesSection(companiesData) {
           stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
         <path d="M14 2v6h6" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
       </svg>
-      <input class="cat-name-input company-name-input"
+      <input class="company-name-input"
         type="text"
         value="${esc(c.name)}"
         data-file="${esc(c.file)}"
