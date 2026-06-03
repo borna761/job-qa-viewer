@@ -183,7 +183,7 @@ function attachCardHandlers() {
       });
       if (res.ok) {
         p.source   = newSource;
-        p.filePath = p.filePath.replace(fromComp.file, toComp.file);
+        p.filePath = p.filePath.slice(0, -fromComp.file.length) + toComp.file;
         await saveOrder();
         showToast(`Moved to ${newSource}`);
         render();
@@ -516,7 +516,12 @@ function renderCompaniesSection(companiesData) {
         // Update in-memory state
         const entry = companies.find(c => c.file === oldFile);
         if (entry) { entry.file = data.file; entry.name = data.name; }
-        allPairs.forEach(p => { if (p.source === oldName) p.source = data.name; });
+        allPairs.forEach(p => {
+          if (p.source === oldName) {
+            p.source   = data.name;
+            p.filePath = p.filePath.slice(0, -oldFile.length) + data.file;
+          }
+        });
         if (activeCompany === oldName) activeCompany = data.name;
         // Update input attributes so a second rename works
         input.value = data.name;

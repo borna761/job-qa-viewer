@@ -82,9 +82,10 @@ const DEFAULT_CONFIG = {
 function loadConfig() {
   try {
     const saved = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
-    return { ...DEFAULT_CONFIG, ...saved };
+    // Deep-merge companyNames so DEFAULT_CONFIG is never mutated
+    return { ...DEFAULT_CONFIG, ...saved, companyNames: { ...DEFAULT_CONFIG.companyNames, ...(saved.companyNames || {}) } };
   } catch {
-    return DEFAULT_CONFIG;
+    return { ...DEFAULT_CONFIG, companyNames: { ...DEFAULT_CONFIG.companyNames } };
   }
 }
 
@@ -132,9 +133,12 @@ function getAll() {
     .filter(f => f.endsWith('.txt'))
     .sort((a, b) => a === 'answers.txt' ? -1 : b === 'answers.txt' ? 1 : a.localeCompare(b));
 
+  const companyNames = config.companyNames || {};
+  const sourceName = f => companyNames[f] || (f === 'answers.txt' ? 'My Answers' : fileLabel(f));
+
   for (const file of files) {
     const filePath = path.join(DATA_DIR, file);
-    const source = file === 'answers.txt' ? 'My Answers' : fileLabel(file);
+    const source = sourceName(file);
     const text = readTxtFile(filePath);
     parseQA(text).forEach((p, idx) => {
       if (p.question || p.answer.length > 50)
@@ -345,7 +349,8 @@ app.post('/api/config', (req, res) => {
     if (!rules.every(r => typeof r.cat === 'string' && Array.isArray(r.keywords) &&
                           r.keywords.every(k => typeof k === 'string')))
       return res.status(400).json({ error: 'each rule must have a string cat and string[] keywords' });
-    saveConfig({ categories, rules });
+    const existing = loadConfig();
+    saveConfig({ categories, rules, companyNames: existing.companyNames || {} });
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
