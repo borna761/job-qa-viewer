@@ -185,7 +185,7 @@ function attachCardHandlers() {
         p.source   = toComp.name;
         p.filePath = p.filePath.slice(0, -fromComp.file.length) + toComp.file;
         await saveOrder();
-        showToast(`Moved to ${newSource}`);
+        showToast(`Moved to ${toComp.name}`);
         render();
         renderSidebar();
       } else {
