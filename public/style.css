@@ -167,6 +167,11 @@ main { flex: 1; padding: 24px 28px; min-width: 0; }
 .btn-secondary { background: #e8ecf0; color: #555; }
 .btn-secondary:hover { background: #d1d5db; }
 
+.answer-count {
+  font-size: 0.7rem; color: #bbb; text-align: right; margin-top: 6px; line-height: 1;
+}
+.edit-count { color: #aaa; }
+
 mark { background: #fef08a; border-radius: 2px; padding: 0 1px; }
 
 .empty { text-align: center; color: #aaa; padding: 40px 20px; font-size: 0.9rem; }
