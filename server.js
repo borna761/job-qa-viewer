@@ -252,8 +252,6 @@ app.post('/api/rename-company', (req, res) => {
   const { oldFile, newName } = req.body;
   if (!oldFile || !newName || typeof oldFile !== 'string' || typeof newName !== 'string')
     return res.status(400).json({ error: 'oldFile and newName are required' });
-  if (oldFile === 'answers.txt')
-    return res.status(400).json({ error: 'Cannot rename My Answers' });
   const safeOld = path.basename(oldFile);
   if (!safeOld.endsWith('.txt')) return res.status(400).json({ error: 'Invalid file' });
   const oldPath = path.join(DATA_DIR, safeOld);
