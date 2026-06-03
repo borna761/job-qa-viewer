@@ -16,6 +16,14 @@ function highlight(text, q) {
   return esc(text).replace(new RegExp(`(${safe})`, 'gi'), '<mark>$1</mark>');
 }
 
+function countLabel(text) {
+  const trimmed = text.trim();
+  if (!trimmed) return '';
+  const w = trimmed.split(/\s+/).length;
+  const c = trimmed.length;
+  return `${w.toLocaleString()} ${w === 1 ? 'word' : 'words'} · ${c.toLocaleString()} ${c === 1 ? 'char' : 'chars'}`;
+}
+
 function showToast(msg) {
   const t = document.getElementById('toast');
   t.textContent = msg;
@@ -101,6 +109,7 @@ function cardHTML(p) {
       </div>
       <div class="qa-card-body">
         <div class="qa-answer-text">${highlight(p.answer, searchQuery)}</div>
+        <div class="answer-count">${countLabel(p.answer)}</div>
       </div>
     </div>
   `;
@@ -192,11 +201,16 @@ function enterEditMode(card) {
   `;
   card.querySelector('.qa-card-body').innerHTML = `
     <textarea class="edit-a">${esc(p.answer)}</textarea>
+    <div class="answer-count edit-count">${countLabel(p.answer)}</div>
     <div class="edit-actions">
       <button class="btn btn-secondary cancel-btn">Cancel</button>
       <button class="btn btn-primary save-btn">Save</button>
     </div>
   `;
+
+  const editA = card.querySelector('.edit-a');
+  const editCount = card.querySelector('.edit-count');
+  editA.addEventListener('input', () => { editCount.textContent = countLabel(editA.value); });
 
   card.querySelector('.cancel-btn').addEventListener('click', () => render());
 
@@ -231,6 +245,11 @@ document.getElementById('add-toggle').addEventListener('click', () => {
   if (addPanel.classList.contains('open')) document.getElementById('new-question').focus();
 });
 
+const newAnswerCount = document.getElementById('new-answer-count');
+document.getElementById('new-answer').addEventListener('input', e => {
+  newAnswerCount.textContent = countLabel(e.target.value);
+});
+
 document.getElementById('add-cancel').addEventListener('click', () => addPanel.classList.remove('open'));
 
 document.getElementById('add-save').addEventListener('click', async () => {
@@ -247,6 +266,7 @@ document.getElementById('add-save').addEventListener('click', async () => {
   if (res.ok) {
     document.getElementById('new-question').value = '';
     document.getElementById('new-answer').value   = '';
+    document.getElementById('new-answer-count').textContent = '';
     addPanel.classList.remove('open');
     const data = await fetch('/api/data').then(r => r.json());
     allPairs = data.pairs;
