@@ -1,8 +1,29 @@
 let allPairs = [];
 let categories = [];
+let companies  = [];
 let searchQuery = '';
 let sortableInstances = [];
 let activeCategory = null;
+
+// ---- Add-panel helpers ----
+
+function populateAddPanelSelects() {
+  const catSel = document.getElementById('new-category');
+  catSel.innerHTML = `<option value="">Auto-categorise</option>` +
+    categories.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+
+  const srcSel = document.getElementById('new-source');
+  srcSel.innerHTML = companies
+    .map(c => `<option value="${esc(c.file)}">${esc(c.name)}</option>`).join('');
+}
+
+function highlightNewCard(id) {
+  const card = document.querySelector(`.qa-card[data-id="${CSS.escape(id)}"]`);
+  if (!card) return;
+  card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  card.classList.add('newly-added');
+  card.addEventListener('animationend', () => card.classList.remove('newly-added'), { once: true });
+}
 
 // ---- Utilities ----
 
@@ -255,15 +276,18 @@ document.getElementById('add-cancel').addEventListener('click', () => addPanel.c
 document.getElementById('add-save').addEventListener('click', async () => {
   const question = document.getElementById('new-question').value.trim() || null;
   const answer   = document.getElementById('new-answer').value.trim();
+  const category = document.getElementById('new-category').value || null;
+  const source   = document.getElementById('new-source').value   || null;
   if (!answer) { showToast('Answer is required'); return; }
 
   const res = await fetch('/api/add-general', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ question, answer }),
+    body: JSON.stringify({ question, answer, source, category }),
   });
 
   if (res.ok) {
+    const { newId } = await res.json();
     document.getElementById('new-question').value = '';
     document.getElementById('new-answer').value   = '';
     document.getElementById('new-answer-count').textContent = '';
@@ -272,6 +296,8 @@ document.getElementById('add-save').addEventListener('click', async () => {
     allPairs = data.pairs;
     showToast('Added');
     render();
+    renderSidebar();
+    if (newId) highlightNewCard(newId);
   } else {
     showToast('Error saving');
   }
@@ -344,9 +370,14 @@ window.addEventListener('scroll', () => {
 
 // ---- Init ----
 
-fetch('/api/data').then(r => r.json()).then(data => {
+Promise.all([
+  fetch('/api/data').then(r => r.json()),
+  fetch('/api/companies').then(r => r.json()),
+]).then(([data, companiesData]) => {
   allPairs   = data.pairs;
   categories = data.categories;
+  companies  = companiesData;
+  populateAddPanelSelects();
   render();
   renderSidebar();
 });
@@ -357,12 +388,33 @@ let configCache = null;
 let catSortable = null;
 
 async function openSettings() {
-  configCache = await fetch('/api/config').then(r => r.json());
-  renderSettingsModal(configCache);
+  const [config, companiesData] = await Promise.all([
+    fetch('/api/config').then(r => r.json()),
+    fetch('/api/companies').then(r => r.json()),
+  ]);
+  configCache = config;
+  companies   = companiesData;
+  renderSettingsModal(config, companiesData);
   document.getElementById('settings-modal').classList.add('open');
 }
 
-function renderSettingsModal(config) {
+function renderCompaniesSection(companiesData) {
+  const list = document.getElementById('companies-list-settings');
+  if (!list) return;
+  list.innerHTML = companiesData.map(c => `
+    <div class="company-item">
+      <svg width="13" height="13" fill="none" viewBox="0 0 24 24">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6Z"
+          stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+        <path d="M14 2v6h6" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+      </svg>
+      <span>${esc(c.name)}</span>
+    </div>
+  `).join('');
+}
+
+function renderSettingsModal(config, companiesData) {
+  renderCompaniesSection(companiesData);
   // Categories
   const catList = document.getElementById('cat-edit-list');
   catList.innerHTML = config.categories.map((cat, i) => `
@@ -385,7 +437,7 @@ function renderSettingsModal(config) {
     btn.addEventListener('click', () => {
       config.categories.splice(i, 1);
       config.rules = config.rules.filter(r => config.categories.includes(r.cat));
-      renderSettingsModal(config);
+      renderSettingsModal(config, companies);
     });
   });
 
@@ -434,11 +486,32 @@ function syncRulesList(config) {
 document.getElementById('add-cat-btn').addEventListener('click', () => {
   if (!configCache) return;
   configCache.categories.push('New category');
-  renderSettingsModal(configCache);
+  renderSettingsModal(configCache, companies);
   // Focus the new input
   const inputs = document.querySelectorAll('.cat-name-input');
   inputs[inputs.length - 1].focus();
   inputs[inputs.length - 1].select();
+});
+
+document.getElementById('add-company-btn').addEventListener('click', async () => {
+  const input = document.getElementById('new-company-input');
+  const name = input.value.trim();
+  if (!name) { showToast('Enter a company name'); return; }
+  const res = await fetch('/api/add-company', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  });
+  const data = await res.json();
+  if (res.ok) {
+    companies.push({ file: data.file, name: data.name });
+    input.value = '';
+    renderCompaniesSection(companies);
+    populateAddPanelSelects();
+    showToast(`Added "${data.name}"`);
+  } else {
+    showToast(data.error || 'Error adding company');
+  }
 });
 
 document.getElementById('settings-toggle').addEventListener('click', openSettings);
