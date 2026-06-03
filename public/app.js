@@ -108,8 +108,10 @@ function catSelectHTML(current) {
 }
 
 function sourceSelectHTML(current) {
+  // value = c.file (filename) so the move handler can look up by file unambiguously,
+  // even if two companies share a display name. Matches populateAddPanelSelects.
   return `<select class="source-select card-source-select" title="Company">
-    ${companies.map(c => `<option value="${esc(c.name)}" ${c.name === current ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
+    ${companies.map(c => `<option value="${esc(c.file)}" ${c.name === current ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
   </select>`;
 }
 
@@ -170,26 +172,24 @@ function attachCardHandlers() {
     sel.addEventListener('change', async () => {
       const card = sel.closest('.qa-card');
       const p = allPairs.find(x => x.id === card.dataset.id);
-      const oldSource = p.source;
-      const newSource = sel.value;
-      if (oldSource === newSource) return;
-      const fromComp = companies.find(c => c.name === oldSource);
-      const toComp   = companies.find(c => c.name === newSource);
-      if (!fromComp || !toComp) return;
+      const newFile  = sel.value;                                 // c.file from option value
+      const fromComp = companies.find(c => c.name === p.source); // look up current by display name
+      const toComp   = companies.find(c => c.file === newFile);  // look up target by file
+      if (!fromComp || !toComp || fromComp.file === newFile) return;
       const res = await fetch('/api/move-entry', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ fromFile: fromComp.file, toFile: toComp.file, id: p.id }),
       });
       if (res.ok) {
-        p.source   = newSource;
+        p.source   = toComp.name;
         p.filePath = p.filePath.slice(0, -fromComp.file.length) + toComp.file;
         await saveOrder();
         showToast(`Moved to ${newSource}`);
         render();
         renderSidebar();
       } else {
-        sel.value = oldSource;
+        sel.value = fromComp.file;  // restore to original file value
         showToast('Error moving entry');
       }
     });
@@ -332,6 +332,8 @@ document.getElementById('add-save').addEventListener('click', async () => {
     addPanel.classList.remove('open');
     const data = await fetch('/api/data').then(r => r.json());
     allPairs = data.pairs;
+    activeCompany  = null;   // ensure the new card is visible regardless of filter
+    activeCategory = null;
     showToast('Added');
     render();
     renderSidebar();
@@ -464,13 +466,8 @@ let configCache = null;
 let catSortable = null;
 
 async function openSettings() {
-  const [config, companiesData] = await Promise.all([
-    fetch('/api/config').then(r => r.json()),
-    fetch('/api/companies').then(r => r.json()),
-  ]);
-  configCache = config;
-  companies   = companiesData;
-  renderSettingsModal(config, companiesData);
+  configCache = await fetch('/api/config').then(r => r.json());
+  renderSettingsModal(configCache, companies);
   document.getElementById('settings-modal').classList.add('open');
 }
 
@@ -493,7 +490,7 @@ function renderCompaniesSection(companiesData) {
     </div>
   `).join('');
 
-  list.querySelectorAll('.company-name-input:not([readonly])').forEach(input => {
+  list.querySelectorAll('.company-name-input').forEach(input => {
     input.addEventListener('keydown', e => {
       if (e.key === 'Enter')  { e.preventDefault(); input.blur(); }
       if (e.key === 'Escape') { input.value = input.dataset.original; input.blur(); }
