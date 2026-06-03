@@ -1,0 +1,40 @@
+How do you manage a roadmap when engineering capacity is unpredictable?
+
+I've stopped trying to build precise quarterly roadmaps when the team is small or the work is exploratory. Instead I maintain a prioritised stack of outcomes — not features — and I re-stack it every two weeks based on what we've learned and what engineering can realistically take on.
+
+The key shift is separating the confidence tiers. I'm specific about the next four to six weeks and intentionally vague beyond that. When stakeholders ask for a yearly roadmap I give them themes and bets, not dates. That sounds like less, but it's more honest and it means I don't spend half my time re-explaining why something slipped.
+
+The thing that breaks this is when leadership treats the vague part as a commitment. I've learned to be explicit about that boundary upfront rather than hoping it won't come up.
+
+
+
+
+Describe a time you had to make a product decision with very little data.
+
+We were deciding whether to build a mobile app or double down on the web experience at a point where we had maybe forty active users. There was no meaningful data to look at — the sample was too small and too skewed toward early adopters.
+
+I made the call to stay web-only based on three things: what our users told us they did at work (mostly desktop), what our two biggest potential customers said they needed, and what the team could ship without splitting focus. I documented the reasoning so the decision could be revisited if the signals changed.
+
+Eighteen months later we still hadn't needed to build the app. The decision turned out to be right, but more importantly it held up under pressure because everyone could see why we'd made it. That matters more than being lucky.
+
+
+
+
+How do you work with designers?
+
+The best partnerships I've had start before there's anything to design. I pull designers into problem framing — sharing user research, talking through constraints, debating what the actual job-to-be-done is. By the time they're sketching, they have enough context to push back on me, which is what I want.
+
+What I try to avoid is handing over a spec and asking for wireframes. That positions design as execution rather than thinking, and you end up with solutions that are technically responsive to the brief but miss something important about the user.
+
+I also make a point of running design reviews with engineers early, not just at the end. It surfaces implementation constraints before anyone is attached to a solution, and it means engineering feels like they shaped the product rather than just built what was handed to them.
+
+
+
+
+What's the hardest feedback you've received as a PM and what did you do with it?
+
+Early in my career a engineering lead told me that my specs were thorough but that I was using them to avoid hard conversations. He meant that I was writing down edge cases instead of sitting with engineers and figuring out the right answer together. He was right.
+
+I had developed a habit of over-documenting because I was worried about being seen as disorganised, and it had the opposite effect — it made me seem like I was managing through process rather than leading. I changed how I worked: shorter specs, more time with the team in the problem space, and more comfort saying "I don't know, let's figure it out."
+
+That feedback changed my default mode as a PM. The spec is a communication tool, not a shield.
