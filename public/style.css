@@ -48,6 +48,9 @@ header h1 { font-size: 1.1rem; font-weight: 600; flex: 1; }
 }
 #add-panel input:focus, #add-panel textarea:focus { border-color: #4f46e5; box-shadow: 0 0 0 2px #eef2ff; }
 #add-panel textarea { min-height: 90px; resize: vertical; margin-top: 8px; }
+.add-panel-meta { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.add-meta-select { font-size: 0.78rem; border-radius: 10px; border: none; padding: 4px 8px; cursor: pointer; outline: none; font-family: inherit; }
+.source-select { background: #f0f0f0; color: #555; }
 .panel-actions { display: flex; gap: 8px; margin-top: 10px; justify-content: flex-end; }
 
 /* Layout */
@@ -113,6 +116,12 @@ main { flex: 1; padding: 24px 28px; min-width: 0; }
 
 .qa-card.sortable-ghost { opacity: 0.35; }
 .qa-card.sortable-drag  { box-shadow: 0 8px 24px rgba(0,0,0,0.15); }
+
+@keyframes card-pop {
+  0%, 25% { border-color: #4f46e5; box-shadow: 0 0 0 3px rgba(79,70,229,0.2); }
+  100%    { border-color: #e8ecf0; box-shadow: none; }
+}
+.qa-card.newly-added { animation: card-pop 2s ease-out forwards; }
 
 .qa-card-head {
   padding: 12px 14px; background: #f8f9ff;
@@ -244,6 +253,24 @@ mark { background: #fef08a; border-radius: 2px; padding: 0 1px; }
   border-radius: 4px; color: #ccc; display: flex; flex-shrink: 0;
 }
 .btn-icon-sm:hover { background: #fee2e2; color: #ef4444; }
+
+/* Companies section */
+.companies-list { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+
+.company-item {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 0.875rem; color: #374151;
+  background: #f8f9ff; border: 1px solid #e8ecf0;
+  border-radius: 8px; padding: 7px 12px;
+}
+.company-item svg { color: #9ca3af; flex-shrink: 0; }
+
+.add-company-row { display: flex; gap: 8px; }
+.add-company-row input {
+  flex: 1; font-family: inherit; font-size: 0.875rem;
+  border: 1px solid #d1d5db; border-radius: 6px; padding: 7px 10px; outline: none;
+}
+.add-company-row input:focus { border-color: #4f46e5; box-shadow: 0 0 0 2px #eef2ff; }
 
 .add-cat-btn {
   margin-top: 6px; background: none; border: 1px dashed #c7d2fe;

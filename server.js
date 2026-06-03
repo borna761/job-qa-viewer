@@ -192,14 +192,59 @@ app.post('/api/order', (req, res) => {
 });
 
 app.post('/api/add-general', (req, res) => {
-  const { question, answer } = req.body;
+  const { question, answer, source, category } = req.body;
   if (!answer) return res.status(400).json({ error: 'Answer is required' });
+
+  // Resolve target file — strip any path components to prevent traversal
+  let targetFile = GENERAL_FILE;
+  if (source && source !== 'answers.txt') {
+    const safe = path.basename(source);
+    if (!safe.endsWith('.txt')) return res.status(400).json({ error: 'Invalid source' });
+    const resolved = path.join(DATA_DIR, safe);
+    if (!resolved.startsWith(DATA_DIR + path.sep)) return res.status(400).json({ error: 'Invalid source' });
+    targetFile = resolved;
+  }
+
   try {
-    const text = fs.existsSync(GENERAL_FILE) ? readTxtFile(GENERAL_FILE) : '';
+    const text = fs.existsSync(targetFile) ? readTxtFile(targetFile) : '';
     const pairs = text ? parseQA(text).filter(p => p.question || p.answer.length > 50) : [];
-    pairs.push({ question: question || null, answer });
-    fs.writeFileSync(GENERAL_FILE, serializeQA(pairs), 'utf8');
-    res.json({ ok: true });
+    const newPair = { question: question || null, answer };
+    pairs.push(newPair);
+    fs.writeFileSync(targetFile, serializeQA(pairs), 'utf8');
+
+    const newId = pairId(newPair);
+
+    // Persist explicit category so the card lands in the right section immediately
+    if (category && typeof category === 'string') {
+      const order = loadOrder();
+      order[newId] = { category, sortIndex: 9999 };
+      saveOrder(order);
+    }
+
+    res.json({ ok: true, newId });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/companies', (req, res) => {
+  try {
+    const files = fs.readdirSync(DATA_DIR)
+      .filter(f => f.endsWith('.txt'))
+      .sort((a, b) => a === 'answers.txt' ? -1 : b === 'answers.txt' ? 1 : a.localeCompare(b));
+    res.json(files.map(f => ({ file: f, name: fileLabel(f) })));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/add-company', (req, res) => {
+  const { name } = req.body;
+  if (!name || typeof name !== 'string' || !name.trim())
+    return res.status(400).json({ error: 'Name is required' });
+  const slug = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  if (!slug) return res.status(400).json({ error: 'Invalid name' });
+  const filePath = path.join(DATA_DIR, slug + '.txt');
+  if (fs.existsSync(filePath)) return res.status(400).json({ error: 'Company already exists' });
+  try {
+    fs.writeFileSync(filePath, '', 'utf8');
+    res.json({ ok: true, file: slug + '.txt', name: fileLabel(slug + '.txt') });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
