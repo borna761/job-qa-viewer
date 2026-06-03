@@ -268,6 +268,13 @@ mark { background: #fef08a; border-radius: 2px; padding: 0 1px; }
 .company-item svg { color: #9ca3af; flex-shrink: 0; }
 
 .add-company-row { display: flex; gap: 8px; }
+.company-name-input {
+  flex: 1; border: none; background: transparent;
+  font-size: 0.875rem; font-weight: 500; color: #1a1a2e;
+  outline: none; padding: 2px 4px; border-radius: 4px;
+}
+.company-name-input:focus { background: white; box-shadow: 0 0 0 2px #eef2ff; }
+
 .add-company-row input {
   flex: 1; font-family: inherit; font-size: 0.875rem;
   border: 1px solid #d1d5db; border-radius: 6px; padding: 7px 10px; outline: none;
