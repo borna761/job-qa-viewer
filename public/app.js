@@ -107,6 +107,12 @@ function catSelectHTML(current) {
   </select>`;
 }
 
+function sourceSelectHTML(current) {
+  return `<select class="source-select card-source-select" title="Company">
+    ${companies.map(c => `<option value="${esc(c.name)}" ${c.name === current ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
+  </select>`;
+}
+
 function cardHTML(p) {
   return `
     <div class="qa-card" data-id="${esc(p.id)}">
@@ -121,7 +127,7 @@ function cardHTML(p) {
         </div>
         <div class="card-meta">
           ${catSelectHTML(p.category)}
-          <span class="source-badge">${esc(p.source)}</span>
+          ${sourceSelectHTML(p.source)}
           <button class="btn-icon edit-btn" title="Edit">
             <svg width="14" height="14" fill="none" viewBox="0 0 24 24">
               <path d="M15.232 5.232 18.768 8.768M3 21l3.75-.75L18.232 8.768a2 2 0 0 0-2.536-2.536L3 17.25 3 21Z"
@@ -156,6 +162,36 @@ function attachCardHandlers() {
       p.category = sel.value;
       await saveOrder();
       render();
+    });
+  });
+
+  document.querySelectorAll('.card-source-select').forEach(sel => {
+    sel.addEventListener('mousedown', e => e.stopPropagation());
+    sel.addEventListener('change', async () => {
+      const card = sel.closest('.qa-card');
+      const p = allPairs.find(x => x.id === card.dataset.id);
+      const oldSource = p.source;
+      const newSource = sel.value;
+      if (oldSource === newSource) return;
+      const fromComp = companies.find(c => c.name === oldSource);
+      const toComp   = companies.find(c => c.name === newSource);
+      if (!fromComp || !toComp) return;
+      const res = await fetch('/api/move-entry', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fromFile: fromComp.file, toFile: toComp.file, id: p.id }),
+      });
+      if (res.ok) {
+        p.source   = newSource;
+        p.filePath = p.filePath.replace(fromComp.file, toComp.file);
+        await saveOrder();
+        showToast(`Moved to ${newSource}`);
+        render();
+        renderSidebar();
+      } else {
+        sel.value = oldSource;
+        showToast('Error moving entry');
+      }
     });
   });
 }
