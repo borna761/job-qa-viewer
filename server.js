@@ -45,7 +45,12 @@ function serializeQA(pairs) {
   return pairs.map(p => {
     const q = sanitizeContent(p.question);
     const a = sanitizeContent(p.answer);
-    return q ? q + '\n' + a : a;
+    if (!q) return a;
+    // Ensure the question line survives a round-trip through parseQA.
+    // If it doesn't end with ? or * the parser won't recognise it as a
+    // question on re-read, so append the silent * marker.
+    const qLine = isQuestionLine(q) ? q : q + '*';
+    return qLine + '\n' + a;
   }).join('\n\n\n\n');
 }
 
