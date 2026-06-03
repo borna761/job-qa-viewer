@@ -17,8 +17,10 @@ function highlight(text, q) {
 }
 
 function countLabel(text) {
-  const w = text.trim() ? text.trim().split(/\s+/).length : 0;
-  const c = text.length;
+  const trimmed = text.trim();
+  if (!trimmed) return '';
+  const w = trimmed.split(/\s+/).length;
+  const c = trimmed.length;
   return `${w.toLocaleString()} ${w === 1 ? 'word' : 'words'} · ${c.toLocaleString()} ${c === 1 ? 'char' : 'chars'}`;
 }
 
@@ -243,9 +245,9 @@ document.getElementById('add-toggle').addEventListener('click', () => {
   if (addPanel.classList.contains('open')) document.getElementById('new-question').focus();
 });
 
+const newAnswerCount = document.getElementById('new-answer-count');
 document.getElementById('new-answer').addEventListener('input', e => {
-  const el = document.getElementById('new-answer-count');
-  el.textContent = e.target.value ? countLabel(e.target.value) : '';
+  newAnswerCount.textContent = countLabel(e.target.value);
 });
 
 document.getElementById('add-cancel').addEventListener('click', () => addPanel.classList.remove('open'));
