@@ -45,7 +45,12 @@ function serializeQA(pairs) {
   return pairs.map(p => {
     const q = sanitizeContent(p.question);
     const a = sanitizeContent(p.answer);
-    return q ? q + '\n' + a : a;
+    if (!q) return a;
+    // Ensure the question line survives a round-trip through parseQA.
+    // If it doesn't end with ? or * the parser won't recognise it as a
+    // question on re-read, so append the silent * marker.
+    const qLine = isQuestionLine(q) ? q : q + '*';
+    return qLine + '\n' + a;
   }).join('\n\n\n\n');
 }
 
@@ -69,6 +74,7 @@ const DEFAULT_CONFIG = {
     'Culture & Team Fit',
     'Other',
   ],
+  companyNames: {},  // file → display name override; falls back to fileLabel
   rules: [
     { cat: 'AI & Tools',              keywords: ['ai', 'artificial intelligence', 'gpt', 'claude', 'cursor', 'llm', 'tooling'] },
     { cat: 'Culture & Team Fit',      keywords: ['team fit', 'company culture', 'work environment', 'why join', 'early stage', 'startup', 'remote', 'values', 'fun', 'creative'] },
@@ -81,9 +87,10 @@ const DEFAULT_CONFIG = {
 function loadConfig() {
   try {
     const saved = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
-    return { ...DEFAULT_CONFIG, ...saved };
+    // Deep-merge companyNames so DEFAULT_CONFIG is never mutated
+    return { ...DEFAULT_CONFIG, ...saved, companyNames: { ...DEFAULT_CONFIG.companyNames, ...(saved.companyNames || {}) } };
   } catch {
-    return DEFAULT_CONFIG;
+    return { ...DEFAULT_CONFIG, companyNames: { ...DEFAULT_CONFIG.companyNames } };
   }
 }
 
@@ -123,6 +130,16 @@ function fileLabel(filename) {
   return filename.replace('.txt', '').replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
 
+// Canonical display name for a data file, respecting saved overrides.
+function displayName(file, companyNames) {
+  return companyNames[file] || (file === 'answers.txt' ? 'My Answers' : fileLabel(file));
+}
+
+// Convert a human name to a safe slug used as the txt filename stem.
+function nameToSlug(name) {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
 function getAll() {
   const config = loadConfig();
   const raw = [];
@@ -131,9 +148,11 @@ function getAll() {
     .filter(f => f.endsWith('.txt'))
     .sort((a, b) => a === 'answers.txt' ? -1 : b === 'answers.txt' ? 1 : a.localeCompare(b));
 
+  const companyNames = config.companyNames;
+
   for (const file of files) {
     const filePath = path.join(DATA_DIR, file);
-    const source = file === 'answers.txt' ? 'My Answers' : fileLabel(file);
+    const source = displayName(file, companyNames);
     const text = readTxtFile(filePath);
     parseQA(text).forEach((p, idx) => {
       if (p.question || p.answer.length > 50)
@@ -192,13 +211,119 @@ app.post('/api/order', (req, res) => {
 });
 
 app.post('/api/add-general', (req, res) => {
-  const { question, answer } = req.body;
+  const { question, answer, source, category } = req.body;
   if (!answer) return res.status(400).json({ error: 'Answer is required' });
+
+  // Resolve target file — strip any path components to prevent traversal
+  let targetFile = GENERAL_FILE;
+  if (source && source !== 'answers.txt') {
+    const safe = path.basename(source);
+    if (!safe.endsWith('.txt')) return res.status(400).json({ error: 'Invalid source' });
+    const resolved = path.join(DATA_DIR, safe);
+    if (!resolved.startsWith(DATA_DIR + path.sep)) return res.status(400).json({ error: 'Invalid source' });
+    targetFile = resolved;
+  }
+
   try {
-    const text = fs.existsSync(GENERAL_FILE) ? readTxtFile(GENERAL_FILE) : '';
+    const text = fs.existsSync(targetFile) ? readTxtFile(targetFile) : '';
     const pairs = text ? parseQA(text).filter(p => p.question || p.answer.length > 50) : [];
-    pairs.push({ question: question || null, answer });
-    fs.writeFileSync(GENERAL_FILE, serializeQA(pairs), 'utf8');
+    const newPair = { question: question || null, answer };
+    pairs.push(newPair);
+    fs.writeFileSync(targetFile, serializeQA(pairs), 'utf8');
+
+    const newId = pairId(newPair);
+
+    // Persist explicit category so the card lands in the right section immediately
+    if (category && typeof category === 'string') {
+      const order = loadOrder();
+      order[newId] = { category, sortIndex: 9999 };
+      saveOrder(order);
+    }
+
+    res.json({ ok: true, newId });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/companies', (req, res) => {
+  try {
+    const cfg   = loadConfig();
+    const files = fs.readdirSync(DATA_DIR)
+      .filter(f => f.endsWith('.txt'))
+      .sort((a, b) => a === 'answers.txt' ? -1 : b === 'answers.txt' ? 1 : a.localeCompare(b));
+    res.json(files.map(f => ({ file: f, name: displayName(f, cfg.companyNames) })));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/add-company', (req, res) => {
+  const { name } = req.body;
+  if (!name || typeof name !== 'string' || !name.trim())
+    return res.status(400).json({ error: 'Name is required' });
+  const trimmed = name.trim();
+  const slug = nameToSlug(trimmed);
+  if (!slug) return res.status(400).json({ error: 'Invalid name' });
+  const file = slug + '.txt';
+  const filePath = path.join(DATA_DIR, file);
+  if (fs.existsSync(filePath)) return res.status(400).json({ error: 'Company already exists' });
+  try {
+    fs.writeFileSync(filePath, '', 'utf8');
+    const cfg = loadConfig();
+    cfg.companyNames[file] = trimmed;
+    saveConfig(cfg);
+    res.json({ ok: true, file, name: trimmed });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/rename-company', (req, res) => {
+  const { oldFile, newName } = req.body;
+  if (!oldFile || !newName || typeof oldFile !== 'string' || typeof newName !== 'string')
+    return res.status(400).json({ error: 'oldFile and newName are required' });
+  const safeOld = path.basename(oldFile);
+  if (!safeOld.endsWith('.txt')) return res.status(400).json({ error: 'Invalid file' });
+  const oldPath = path.join(DATA_DIR, safeOld);
+  if (!oldPath.startsWith(DATA_DIR + path.sep)) return res.status(400).json({ error: 'Invalid file' });
+  if (!fs.existsSync(oldPath)) return res.status(404).json({ error: 'Company not found' });
+  const trimmed = newName.trim();
+  const slug = nameToSlug(trimmed);
+  if (!slug) return res.status(400).json({ error: 'Invalid name' });
+  const newFile = slug + '.txt';
+  const newPath = path.join(DATA_DIR, newFile);
+  try {
+    // Only rename the file if the slug actually changed
+    if (newFile !== safeOld) {
+      if (fs.existsSync(newPath)) return res.status(400).json({ error: 'A company with that name already exists' });
+      fs.renameSync(oldPath, newPath);
+    }
+    // Always store the exact display name chosen by the user
+    const cfg = loadConfig();
+    delete cfg.companyNames[safeOld];
+    cfg.companyNames[newFile] = trimmed;
+    saveConfig(cfg);
+    res.json({ ok: true, file: newFile, name: trimmed });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/move-entry', (req, res) => {
+  const { fromFile, toFile, id } = req.body;
+  if (!fromFile || !toFile || !id) return res.status(400).json({ error: 'fromFile, toFile, and id are required' });
+  const fromPath = path.join(DATA_DIR, path.basename(fromFile));
+  const toPath   = path.join(DATA_DIR, path.basename(toFile));
+  // Guard after normalisation so 'foo.txt' vs './foo.txt' is correctly caught
+  if (fromPath === toPath) return res.json({ ok: true });
+  if (!fromPath.startsWith(DATA_DIR + path.sep) || !toPath.startsWith(DATA_DIR + path.sep))
+    return res.status(400).json({ error: 'Invalid file path' });
+  if (!fs.existsSync(fromPath)) return res.status(404).json({ error: 'Source file not found' });
+  if (!fs.existsSync(toPath))   return res.status(404).json({ error: 'Destination file not found' });
+  try {
+    // Read both files before writing either — no destructive write happens
+    // until we know both reads succeeded and the entry exists.
+    const fromPairs = parseQA(readTxtFile(fromPath)).filter(p => p.question || p.answer.length > 50);
+    const idx = fromPairs.findIndex(p => pairId(p) === id);
+    if (idx === -1) return res.status(404).json({ error: 'Entry not found' });
+    const toPairs = parseQA(readTxtFile(toPath)).filter(p => p.question || p.answer.length > 50);
+    const [moved] = fromPairs.splice(idx, 1);
+    toPairs.push(moved);
+    fs.writeFileSync(fromPath, serializeQA(fromPairs), 'utf8');
+    fs.writeFileSync(toPath,   serializeQA(toPairs),   'utf8');
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -237,7 +362,8 @@ app.post('/api/config', (req, res) => {
     if (!rules.every(r => typeof r.cat === 'string' && Array.isArray(r.keywords) &&
                           r.keywords.every(k => typeof k === 'string')))
       return res.status(400).json({ error: 'each rule must have a string cat and string[] keywords' });
-    saveConfig({ categories, rules });
+    const existing = loadConfig();
+    saveConfig({ categories, rules, companyNames: existing.companyNames });
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
