@@ -69,6 +69,7 @@ const DEFAULT_CONFIG = {
     'Culture & Team Fit',
     'Other',
   ],
+  companyNames: {},  // file → display name override; falls back to fileLabel
   rules: [
     { cat: 'AI & Tools',              keywords: ['ai', 'artificial intelligence', 'gpt', 'claude', 'cursor', 'llm', 'tooling'] },
     { cat: 'Culture & Team Fit',      keywords: ['team fit', 'company culture', 'work environment', 'why join', 'early stage', 'startup', 'remote', 'values', 'fun', 'creative'] },
@@ -227,10 +228,13 @@ app.post('/api/add-general', (req, res) => {
 
 app.get('/api/companies', (req, res) => {
   try {
+    const cfg   = loadConfig();
+    const names = cfg.companyNames || {};
     const files = fs.readdirSync(DATA_DIR)
       .filter(f => f.endsWith('.txt'))
       .sort((a, b) => a === 'answers.txt' ? -1 : b === 'answers.txt' ? 1 : a.localeCompare(b));
-    res.json(files.map(f => ({ file: f, name: f === 'answers.txt' ? 'My Answers' : fileLabel(f) })));
+    const fallback = f => f === 'answers.txt' ? 'My Answers' : fileLabel(f);
+    res.json(files.map(f => ({ file: f, name: names[f] || fallback(f) })));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -238,13 +242,19 @@ app.post('/api/add-company', (req, res) => {
   const { name } = req.body;
   if (!name || typeof name !== 'string' || !name.trim())
     return res.status(400).json({ error: 'Name is required' });
-  const slug = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  const trimmed = name.trim();
+  const slug = trimmed.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
   if (!slug) return res.status(400).json({ error: 'Invalid name' });
-  const filePath = path.join(DATA_DIR, slug + '.txt');
+  const file = slug + '.txt';
+  const filePath = path.join(DATA_DIR, file);
   if (fs.existsSync(filePath)) return res.status(400).json({ error: 'Company already exists' });
   try {
     fs.writeFileSync(filePath, '', 'utf8');
-    res.json({ ok: true, file: slug + '.txt', name: fileLabel(slug + '.txt') });
+    const cfg = loadConfig();
+    cfg.companyNames = cfg.companyNames || {};
+    cfg.companyNames[file] = trimmed;
+    saveConfig(cfg);
+    res.json({ ok: true, file, name: trimmed });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -257,14 +267,24 @@ app.post('/api/rename-company', (req, res) => {
   const oldPath = path.join(DATA_DIR, safeOld);
   if (!oldPath.startsWith(DATA_DIR + path.sep)) return res.status(400).json({ error: 'Invalid file' });
   if (!fs.existsSync(oldPath)) return res.status(404).json({ error: 'Company not found' });
-  const slug = newName.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  const trimmed = newName.trim();
+  const slug = trimmed.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
   if (!slug) return res.status(400).json({ error: 'Invalid name' });
   const newFile = slug + '.txt';
   const newPath = path.join(DATA_DIR, newFile);
-  if (fs.existsSync(newPath)) return res.status(400).json({ error: 'A company with that name already exists' });
   try {
-    fs.renameSync(oldPath, newPath);
-    res.json({ ok: true, file: newFile, name: fileLabel(newFile) });
+    // Only rename the file if the slug actually changed
+    if (newFile !== safeOld) {
+      if (fs.existsSync(newPath)) return res.status(400).json({ error: 'A company with that name already exists' });
+      fs.renameSync(oldPath, newPath);
+    }
+    // Always store the exact display name chosen by the user
+    const cfg = loadConfig();
+    cfg.companyNames = cfg.companyNames || {};
+    delete cfg.companyNames[safeOld];
+    cfg.companyNames[newFile] = trimmed;
+    saveConfig(cfg);
+    res.json({ ok: true, file: newFile, name: trimmed });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
