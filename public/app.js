@@ -8,6 +8,10 @@ let activeCompany  = null;
 
 // ---- Add-panel helpers ----
 
+function sortCompanies() {
+  companies.sort((a, b) => a.name.localeCompare(b.name));
+}
+
 function populateAddPanelSelects() {
   const catSel = document.getElementById('new-category');
   catSel.innerHTML = `<option value="">Auto-categorise</option>` +
@@ -455,6 +459,7 @@ Promise.all([
   allPairs   = data.pairs;
   categories = data.categories;
   companies  = companiesData;
+  sortCompanies();
   populateAddPanelSelects();
   render();
   renderSidebar();
@@ -474,8 +479,7 @@ async function openSettings() {
 function renderCompaniesSection(companiesData) {
   const list = document.getElementById('companies-list-settings');
   if (!list) return;
-  const sorted = [...companiesData].sort((a, b) => a.name.localeCompare(b.name));
-  list.innerHTML = sorted.map(c => `
+  list.innerHTML = companiesData.map(c => `
     <div class="company-item">
       <svg width="13" height="13" fill="none" viewBox="0 0 24 24" style="flex-shrink:0;color:#9ca3af">
         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6Z"
@@ -521,6 +525,7 @@ function renderCompaniesSection(companiesData) {
           }
         });
         if (activeCompany === oldName) activeCompany = data.name;
+        sortCompanies();
         // Update input attributes so a second rename works
         input.value = data.name;
         input.dataset.file = data.file;
@@ -629,6 +634,7 @@ document.getElementById('add-company-btn').addEventListener('click', async () =>
   const data = await res.json();
   if (res.ok) {
     companies.push({ file: data.file, name: data.name });
+    sortCompanies();
     input.value = '';
     renderCompaniesSection(companies);
     populateAddPanelSelects();
