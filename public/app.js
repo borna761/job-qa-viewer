@@ -474,7 +474,8 @@ async function openSettings() {
 function renderCompaniesSection(companiesData) {
   const list = document.getElementById('companies-list-settings');
   if (!list) return;
-  list.innerHTML = companiesData.map(c => `
+  const sorted = [...companiesData].sort((a, b) => a.name.localeCompare(b.name));
+  list.innerHTML = sorted.map(c => `
     <div class="company-item">
       <svg width="13" height="13" fill="none" viewBox="0 0 24 24" style="flex-shrink:0;color:#9ca3af">
         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6Z"
