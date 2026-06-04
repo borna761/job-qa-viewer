@@ -8,6 +8,10 @@ let activeCompany  = null;
 
 // ---- Add-panel helpers ----
 
+function sortCompanies() {
+  companies.sort((a, b) => a.name.localeCompare(b.name));
+}
+
 function populateAddPanelSelects() {
   const catSel = document.getElementById('new-category');
   catSel.innerHTML = `<option value="">Auto-categorise</option>` +
@@ -185,7 +189,7 @@ function attachCardHandlers() {
         p.source   = toComp.name;
         p.filePath = p.filePath.slice(0, -fromComp.file.length) + toComp.file;
         await saveOrder();
-        showToast(`Moved to ${newSource}`);
+        showToast(`Moved to ${toComp.name}`);
         render();
         renderSidebar();
       } else {
@@ -455,6 +459,7 @@ Promise.all([
   allPairs   = data.pairs;
   categories = data.categories;
   companies  = companiesData;
+  sortCompanies();
   populateAddPanelSelects();
   render();
   renderSidebar();
@@ -520,6 +525,7 @@ function renderCompaniesSection(companiesData) {
           }
         });
         if (activeCompany === oldName) activeCompany = data.name;
+        sortCompanies();
         // Update input attributes so a second rename works
         input.value = data.name;
         input.dataset.file = data.file;
@@ -628,6 +634,7 @@ document.getElementById('add-company-btn').addEventListener('click', async () =>
   const data = await res.json();
   if (res.ok) {
     companies.push({ file: data.file, name: data.name });
+    sortCompanies();
     input.value = '';
     renderCompaniesSection(companies);
     populateAddPanelSelects();
