@@ -13,7 +13,7 @@ A local web app for organising and browsing your job application answers. Keep y
 - **Word & character counts** — live while you type and on every saved answer
 - **Add new answers** — via the Add button, with optional category and company
 - **Drag to reorder** — within or across categories using the ⠿ handle
-- **Manage companies** — add, rename, and move entries between companies from the ⚙️ settings modal
+- **Manage companies** — add and rename companies from the ⚙️ settings modal; move an entry between companies via the company dropdown on its card
 - **Configurable categories** — rename, add, delete, and reorder categories; edit auto-categorisation keywords via the ⚙️ settings modal
 
 ## Requirements
