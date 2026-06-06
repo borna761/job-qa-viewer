@@ -1,6 +1,9 @@
 node_modules/
 .DS_Store
 
+# Claude Code local settings (may contain local paths / private data)
+.claude/settings.local.json
+
 # Personal answer files — keep local, never commit
 data/*.txt
 order.json

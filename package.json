@@ -1,15 +1,24 @@
 {
   "name": "job-qa-viewer",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "A local web app for organising and browsing your job application Q&A answers, stored as plain text files.",
+  "main": "server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node server.js"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "keywords": [
+    "interview",
+    "job-search",
+    "qa",
+    "express",
+    "notes"
+  ],
+  "author": "Borna Safai (https://github.com/borna761)",
+  "license": "MIT",
   "type": "commonjs",
+  "engines": {
+    "node": ">=18"
+  },
   "dependencies": {
     "express": "^5.2.1"
   }
