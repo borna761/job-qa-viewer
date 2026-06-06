@@ -20,7 +20,7 @@ A local web app for organising and browsing your job application answers. Keep y
 ## Setup
 
 ```bash
-git clone https://github.com/your-username/job-qa-viewer.git
+git clone https://github.com/borna761/job-qa-viewer.git
 cd job-qa-viewer
 npm install
 ```
