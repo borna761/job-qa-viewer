@@ -371,4 +371,6 @@ app.post('/api/config', (req, res) => {
 app.use(express.static(path.join(__dirname, 'public')));
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 
-app.listen(PORT, () => console.log(`Job Q&A Viewer running at http://localhost:${PORT}`));
+// Bind to loopback only — this app serves your private answers with no auth,
+// so it must never be reachable from other machines on the network.
+app.listen(PORT, '127.0.0.1', () => console.log(`Job Q&A Viewer running at http://localhost:${PORT}`));

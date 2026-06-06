@@ -7,10 +7,13 @@ A local web app for organising and browsing your job application answers. Keep y
 ## Features
 
 - **Browse by category** — sidebar navigation with auto-categorisation based on keywords
+- **Filter by company** — group answers by company/source and filter to one at a time
 - **Search** — filters questions and answers live
 - **Edit in place** — click the pencil icon to update any answer, saved back to the source file
-- **Add new answers** — via the Add button, saved to `data/answers.txt`
+- **Word & character counts** — live while you type and on every saved answer
+- **Add new answers** — via the Add button, with optional category and company
 - **Drag to reorder** — within or across categories using the ⠿ handle
+- **Manage companies** — add, rename, and move entries between companies from the ⚙️ settings modal
 - **Configurable categories** — rename, add, delete, and reorder categories; edit auto-categorisation keywords via the ⚙️ settings modal
 
 ## Requirements

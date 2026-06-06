@@ -16,6 +16,9 @@
   "author": "Borna Safai (https://github.com/borna761)",
   "license": "MIT",
   "type": "commonjs",
+  "engines": {
+    "node": ">=18"
+  },
   "dependencies": {
     "express": "^5.2.1"
   }
