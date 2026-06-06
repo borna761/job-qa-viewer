@@ -90,6 +90,10 @@ Once a pair has been manually assigned to a category (or dragged into one), the 
 
 `data/*.txt`, `order.json`, and `config.json` are all gitignored. Only the sample data files and the app code are committed. Your answers never leave your machine.
 
+## License
+
+Released under the [MIT License](LICENSE).
+
 ---
 
 If this saved you time, [buy me a coffee ☕](https://buymeacoffee.com/borna761)
