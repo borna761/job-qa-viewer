@@ -1,5 +1,6 @@
 node_modules/
 .DS_Store
+.env
 
 # Claude Code local settings (may contain local paths / private data)
 .claude/settings.local.json
@@ -8,6 +9,7 @@ node_modules/
 data/*.txt
 order.json
 config.json
+gmail-token.json
 
 # Sample files are force-tracked via git add -f
 !data/acme-corp.txt

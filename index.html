@@ -16,26 +16,32 @@
     <path d="M7 9h10M7 13h6" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
   </svg>
   <h1>Job Q&A</h1>
-  <div class="search-wrap">
+  <div class="tab-nav">
+    <button class="tab-btn active" data-tab="qa">Q&amp;A</button>
+    <button class="tab-btn" data-tab="tracker">Applications</button>
+  </div>
+  <div class="search-wrap" data-qa-only>
     <svg width="14" height="14" fill="none" viewBox="0 0 24 24">
       <circle cx="11" cy="11" r="7" stroke="white" stroke-width="2"/>
       <path d="m16.5 16.5 4 4" stroke="white" stroke-width="2" stroke-linecap="round"/>
     </svg>
     <input type="text" id="search" placeholder="Search…" autocomplete="off">
   </div>
-  <button class="btn-icon" id="settings-toggle" title="Settings" style="color:rgba(255,255,255,0.7)">
+  <button class="btn-icon" id="settings-toggle" data-qa-only title="Settings" style="color:rgba(255,255,255,0.7)">
     <svg width="18" height="18" fill="none" viewBox="0 0 24 24">
       <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" stroke="currentColor" stroke-width="1.8"/>
       <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" stroke="currentColor" stroke-width="1.8"/>
     </svg>
   </button>
-  <button class="add-toggle" id="add-toggle">
+  <button class="add-toggle" id="add-toggle" data-qa-only>
     <svg width="14" height="14" fill="none" viewBox="0 0 24 24">
       <path d="M12 5v14M5 12h14" stroke="white" stroke-width="2.2" stroke-linecap="round"/>
     </svg>
     Add
   </button>
 </header>
+
+<div id="qa-view">
 
 <div id="add-panel">
   <h3>New Q&A</h3>
@@ -57,6 +63,21 @@
   <main id="main">
     <div class="empty">Loading…</div>
   </main>
+</div>
+
+</div><!-- #qa-view -->
+
+<div id="tracker-view" hidden>
+  <div class="tracker-bar">
+    <div id="tracker-stats" class="tracker-stats"></div>
+    <div class="tracker-bar-right">
+      <div id="stage-filters" class="stage-filters"></div>
+      <button class="btn btn-secondary" id="tracker-refresh" disabled>↻ Refresh</button>
+    </div>
+  </div>
+  <div id="tracker-content" class="tracker-content">
+    <div class="empty">Loading applications…</div>
+  </div>
 </div>
 
 <div class="modal-overlay" id="settings-modal">
@@ -98,6 +119,41 @@
 
 <div class="toast" id="toast"></div>
 
+<div id="detail-panel" hidden>
+  <div class="detail-overlay" id="detail-overlay"></div>
+  <div class="detail-drawer">
+    <div class="detail-header">
+      <div class="detail-header-info">
+        <h2 id="detail-company"></h2>
+        <div class="detail-header-meta">
+          <span id="detail-role" class="detail-role"></span>
+          <span id="detail-stage-badge"></span>
+        </div>
+      </div>
+      <button class="modal-close" id="detail-close">
+        <svg width="18" height="18" fill="none" viewBox="0 0 24 24">
+          <path d="M18 6 6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+      </button>
+    </div>
+    <div class="detail-body">
+      <div class="detail-section">
+        <h3>Job Description</h3>
+        <div id="detail-jd" class="detail-content detail-jd-content"></div>
+      </div>
+      <div class="detail-section">
+        <h3>Emails</h3>
+        <div id="detail-emails" class="detail-content"></div>
+      </div>
+      <div class="detail-section">
+        <h3>Calendar Events</h3>
+        <div id="detail-calendar" class="detail-content"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script src="/app.js"></script>
+<script src="/tracker.js"></script>
 </body>
 </html>
