@@ -418,6 +418,7 @@ const NOTION_SECTION_MAP = {
   active:      'Applied',
   stale:       'On Hold',
   inactive:    'Rejected',
+  turneddown:  'Turned Down',
   // 'dontapply' and 'notapplied' intentionally absent → null → skipped
 };
 
@@ -443,8 +444,8 @@ function parseNotionBlocks(blocks) {
     if (type === 'child_page') {
       if (currentStage === null) continue;
       const title = content.title || '';
-      const lastUpdate = block.last_edited_time
-        ? block.last_edited_time.split('T')[0]
+      const lastUpdate = block.created_time
+        ? block.created_time.split('T')[0]
         : null;
       // Extract company (after last |) and role (between — and |)
       const pipeMatch = title.match(/\|\s*(.+)$/);
@@ -603,16 +604,51 @@ const TRACKER_STAGE_RANK = Object.fromEntries(
 );
 
 function mergeGmailIntoNotion(notionApps, gmailApps) {
-  const map = new Map(notionApps.map(a => [a.company.toLowerCase(), { ...a }]));
+  // Keep every Notion entry (including duplicates with the same company but different roles)
+  const apps = notionApps.map(a => ({ ...a }));
+  // Index by company name for Gmail lookup — one company can have multiple entries
+  const byCompany = new Map();
+  for (const a of apps) {
+    const key = a.company.toLowerCase();
+    if (!byCompany.has(key)) byCompany.set(key, []);
+    byCompany.get(key).push(a);
+  }
   for (const g of gmailApps) {
     if (!g.company) continue;
-    const key = g.company.toLowerCase();
-    if (!map.has(key)) continue; // not in Notion → ignore
-    const cur = map.get(key);
-    if ((TRACKER_STAGE_RANK[g.stage] ?? -1) > (TRACKER_STAGE_RANK[cur.stage] ?? -1))
-      map.set(key, { ...cur, stage: g.stage, lastUpdate: g.lastUpdate || cur.lastUpdate });
+    const matches = byCompany.get(g.company.toLowerCase()) || [];
+    for (const app of matches) {
+      if ((TRACKER_STAGE_RANK[g.stage] ?? -1) > (TRACKER_STAGE_RANK[app.stage] ?? -1))
+        app.stage = g.stage;
+      // Always take the most recent email date
+      if (g.lastUpdate && (!app.lastUpdate || g.lastUpdate > app.lastUpdate))
+        app.lastUpdate = g.lastUpdate;
+    }
   }
-  return [...map.values()];
+  return apps;
+}
+
+// Fetch the most recent job-related email date for each app (lightweight — metadata only)
+async function enrichEmailDates(apps, access) {
+  const CONCURRENCY = 20;
+  async function fetchDate(app) {
+    try {
+      const searchTerm = app.company
+        .replace(/\b(careers?|jobs?|inc\.?|ltd\.?|corp\.?|llc\.?|co\.?|team|hr|recruiting|talent|hiring)\b/gi, '')
+        .replace(/\s+/g, ' ').trim() || app.company;
+      // Require company name in subject; exclude job board notification senders
+      const q = `subject:"${searchTerm}" -from:jobalerts-noreply@linkedin.com -from:hit-noreply@linkedin.com -from:jobs-noreply@linkedin.com -from:notifications-noreply@linkedin.com -from:indeed.com -from:glassdoor.com -from:ziprecruiter.com -from:monster.com -from:careerbuilder.com -from:jobgether.com newer_than:730d`;
+      const list = await gmailApiFetch(`users/me/threads?q=${encodeURIComponent(q)}&maxResults=1`, access);
+      if (!list.threads?.length) return;
+      const thread = await gmailApiFetch(
+        `users/me/threads/${list.threads[0].id}?format=metadata&metadataHeaders=Date`, access);
+      const last = (thread.messages || []).at(-1);
+      if (!last?.internalDate) return;
+      const date = new Date(+last.internalDate).toISOString().split('T')[0];
+      if (!app.lastUpdate || date > app.lastUpdate) app.lastUpdate = date;
+    } catch { /* skip */ }
+  }
+  for (let i = 0; i < apps.length; i += CONCURRENCY)
+    await Promise.allSettled(apps.slice(i, i + CONCURRENCY).map(fetchDate));
 }
 
 // -- Tracker routes --
@@ -657,8 +693,10 @@ app.get('/api/tracker/load', async (req, res) => {
     result.setup.notion = e.code || 'error';
   }
   try {
+    const access = await getGmailAccessToken();
     const gmailApps = await fetchGmailApps(GMAIL_QUERY_FULL);
     result.applications = mergeGmailIntoNotion(result.applications, gmailApps);
+    await enrichEmailDates(result.applications, access);
   } catch (e) {
     result.setup.gmail = e.code || 'error';
   }
@@ -666,9 +704,18 @@ app.get('/api/tracker/load', async (req, res) => {
 });
 
 app.get('/api/tracker/refresh', async (req, res) => {
-  const result = { applications: [], setup: { gmail: 'ok' } };
+  const result = { applications: [], setup: { notion: 'ok', gmail: 'ok' } };
   try {
-    result.applications = await fetchGmailApps(GMAIL_QUERY_DAY);
+    const blocks = await fetchAllNotionBlocks(NOTION_PAGE_ID);
+    result.applications = parseNotionBlocks(blocks);
+  } catch (e) {
+    result.setup.notion = e.code || 'error';
+  }
+  try {
+    const access = await getGmailAccessToken();
+    const gmailApps = await fetchGmailApps(GMAIL_QUERY_DAY);
+    result.applications = mergeGmailIntoNotion(result.applications, gmailApps);
+    await enrichEmailDates(result.applications, access);
   } catch (e) {
     result.setup.gmail = e.code || 'error';
   }
@@ -720,16 +767,20 @@ function stripPlainQuotes(text) {
   return out.join('\n');
 }
 
+function stripTemplateVars(s) {
+  return s.replace(/\{\{[^}]*\}\}/g, '').replace(/\{%[^%]*%\}/g, '');
+}
+
 function emailBodyToHtml(bodyResult, snippet) {
   if (!bodyResult) return escHtml(snippet || '');
   if (bodyResult.html) {
     let h = bodyResult.content;
     const bodyMatch = h.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
     if (bodyMatch) h = bodyMatch[1];
-    return stripHtmlQuotes(h);
+    return stripTemplateVars(stripHtmlQuotes(h));
   }
   const stripped = stripPlainQuotes(bodyResult.content);
-  return `<pre style="white-space:pre-wrap;word-break:break-word;font-family:inherit">${escHtml(stripped || bodyResult.content)}</pre>`;
+  return `<pre style="white-space:pre-wrap;word-break:break-word;font-family:inherit">${escHtml(stripTemplateVars(stripped || bodyResult.content))}</pre>`;
 }
 
 function escHtml(s) {
@@ -790,11 +841,22 @@ app.get('/api/tracker/detail', async (req, res) => {
   const { notionPageId, company } = req.query;
   const result = { jobDescription: '', emails: [] };
 
-  // Notion job description
+  // Notion job description + job posting URL from page title rich text
   if (notionPageId) {
     try {
-      const blocks = await fetchAllNotionBlocks(notionPageId);
+      const [blocks, page] = await Promise.all([
+        fetchAllNotionBlocks(notionPageId),
+        fetch(`https://api.notion.com/v1/pages/${notionPageId}`, {
+          headers: { 'Authorization': `Bearer ${process.env.NOTION_TOKEN}`, 'Notion-Version': '2022-06-28' },
+        }).then(r => r.json()),
+      ]);
       result.jobDescription = blocksToHtml(blocks);
+      // Title rich text may contain a hyperlink on the 🔗 portion
+      const titleSpans = page.properties?.title?.title || [];
+      for (const span of titleSpans) {
+        const url = span.href || (span.plain_text?.match(/https?:\/\/\S+/)?.[0]);
+        if (url) { result.jobUrl = url; break; }
+      }
     } catch (e) {
       result.jobDescriptionError = e.message;
     }
@@ -810,7 +872,7 @@ app.get('/api/tracker/detail', async (req, res) => {
       const searchTerm = company
         .replace(/\b(careers?|jobs?|inc\.?|ltd\.?|corp\.?|llc\.?|co\.?|team|hr|recruiting|talent|hiring)\b/gi, '')
         .replace(/\s+/g, ' ').trim() || company;
-      const q = `${searchTerm} newer_than:730d`;
+      const q = `"${searchTerm}" (application OR interview OR offer OR recruiter OR hiring OR "thank you for applying" OR "next steps") -from:jobalerts-noreply@linkedin.com -from:hit-noreply@linkedin.com -from:inmail-hit-noreply@linkedin.com -from:notifications-noreply@linkedin.com -from:jobs-noreply@linkedin.com -from:indeed.com -from:glassdoor.com -from:ziprecruiter.com -from:monster.com -from:careerbuilder.com -from:jobgether.com newer_than:730d`;
       const list = await gmailApiFetch(
         `users/me/threads?q=${encodeURIComponent(q)}&maxResults=50`, access);
       await Promise.all((list.threads || []).map(async ({ id }) => {
