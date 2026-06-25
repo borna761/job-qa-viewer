@@ -71,6 +71,10 @@
   <div class="tracker-bar">
     <div id="tracker-stats" class="tracker-stats"></div>
     <div class="tracker-bar-right">
+      <div class="tracker-search-wrap">
+        <svg width="13" height="13" fill="none" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2"/><path d="m16.5 16.5 4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <input type="text" id="tracker-search" placeholder="Search…" autocomplete="off">
+      </div>
       <div id="stage-filters" class="stage-filters"></div>
       <button class="btn btn-secondary" id="tracker-refresh" disabled>↻ Refresh</button>
     </div>
@@ -128,6 +132,7 @@
         <div class="detail-header-meta">
           <span id="detail-role" class="detail-role"></span>
           <span id="detail-stage-badge"></span>
+          <a id="detail-job-link" class="detail-job-link" href="#" target="_blank" rel="noopener" hidden>View posting ↗</a>
         </div>
       </div>
       <button class="modal-close" id="detail-close">
