@@ -1,16 +1,17 @@
 // ---- Applications Tracker ----
 
-const STAGES = ['Applied', 'Phone Screen', 'On Hold', 'Interviews', 'Offer', 'Rejected'];
+const STAGES = ['Applied', 'Phone Screen', 'On Hold', 'Interviews', 'Offer', 'Rejected', 'Turned Down'];
 const STAGE_RANK = Object.fromEntries(STAGES.map((s, i) => [s, i]));
 
-// Display sort order: active stages first, rejected last
+// Display sort order: active stages first, terminal stages last
 const STAGE_SORT = {
   'Interviews':   0,
   'Offer':        1,
   'Phone Screen': 2,
   'Applied':      3,
   'On Hold':      4,
-  'Rejected':     5,
+  'Turned Down':  5,
+  'Rejected':     6,
 };
 const STAGE_COLORS = {
   'Applied':      { bg: '#dbeafe', color: '#1d4ed8' },
@@ -19,30 +20,14 @@ const STAGE_COLORS = {
   'Interviews':   { bg: '#ede9fe', color: '#5b21b6' },
   'Offer':        { bg: '#dcfce7', color: '#15803d' },
   'Rejected':     { bg: '#fee2e2', color: '#b91c1c' },
+  'Turned Down':  { bg: '#fff7ed', color: '#c2410c' },
 };
 
 let appsCache        = null;
 let knownFiles       = new Set();
 let activeStageFilter = null;
+let trackerSearch    = '';
 let trackerLoaded    = false;
-
-// ---- Merge (client side for incremental refresh) ----
-
-function stageRank(s) { return STAGE_RANK[s] ?? -1; }
-
-// Notion is source of truth — Gmail refresh only updates stage for existing entries
-function mergeApps(base, updates) {
-  const map = new Map(base.map(a => [a.company.toLowerCase(), { ...a }]));
-  for (const u of updates) {
-    if (!u.company) continue;
-    const key = u.company.toLowerCase();
-    if (!map.has(key)) continue;
-    const cur = map.get(key);
-    if (stageRank(u.stage) > stageRank(cur.stage))
-      map.set(key, { ...cur, stage: u.stage, lastUpdate: u.lastUpdate || cur.lastUpdate });
-  }
-  return [...map.values()];
-}
 
 // ---- Notes indicator ----
 
@@ -71,13 +56,15 @@ function formatDate(dateStr) {
 }
 
 function renderStats(apps) {
-  const interviews = apps.filter(a => a.stage === 'Interviews').length;
-  const awaiting   = apps.filter(a => a.stage === 'Applied' || a.stage === 'Phone Screen').length;
-  const rejected   = apps.filter(a => a.stage === 'Rejected').length;
+  const interviews  = apps.filter(a => a.stage === 'Interviews').length;
+  const awaiting    = apps.filter(a => a.stage === 'Applied' || a.stage === 'Phone Screen').length;
+  const turnedDown  = apps.filter(a => a.stage === 'Turned Down').length;
+  const rejected    = apps.filter(a => a.stage === 'Rejected').length;
   document.getElementById('tracker-stats').innerHTML = `
     <div class="stat-chip">${apps.length} <span>Total</span></div>
     <div class="stat-chip stat-interviews">${interviews} <span>Interviewing</span></div>
     <div class="stat-chip stat-awaiting">${awaiting} <span>Awaiting</span></div>
+    ${turnedDown ? `<div class="stat-chip stat-turneddown">${turnedDown} <span>Turned Down</span></div>` : ''}
     <div class="stat-chip stat-rejected">${rejected} <span>Rejected</span></div>
   `;
 }
@@ -106,24 +93,27 @@ function renderTable(apps) {
     return;
   }
   const sorted = [...apps].sort((a, b) => {
+    // Primary: most recently updated first; null dates sink to bottom
+    if (a.lastUpdate && b.lastUpdate) {
+      const dd = b.lastUpdate.localeCompare(a.lastUpdate);
+      if (dd !== 0) return dd;
+    } else if (a.lastUpdate) return -1;
+    else if (b.lastUpdate) return 1;
+    // Tiebreak: stage order, then company name
     const sd = (STAGE_SORT[a.stage] ?? 9) - (STAGE_SORT[b.stage] ?? 9);
     if (sd !== 0) return sd;
-    // Within each stage: most recently updated first
-    if (a.lastUpdate && b.lastUpdate) return b.lastUpdate.localeCompare(a.lastUpdate);
-    if (a.lastUpdate) return -1;
-    if (b.lastUpdate) return 1;
     return a.company.localeCompare(b.company);
   });
   content.innerHTML = `
     <table class="apps-table">
       <thead><tr>
-        <th>Company</th><th>Role</th><th>Stage</th><th>Last Update</th><th>Notes</th>
+        <th>Role</th><th>Company</th><th>Stage</th><th>Last Update</th><th>Notes</th>
       </tr></thead>
       <tbody>
         ${sorted.map(a => `
           <tr class="app-row" data-company="${esc(a.company)}">
-            <td class="app-company">${esc(a.company)}</td>
             <td class="app-role">${esc(a.role || '—')}</td>
+            <td class="app-company">${esc(a.company)}</td>
             <td>${stageBadgeHtml(a.stage)}</td>
             <td class="app-date">${formatDate(a.lastUpdate)}</td>
             <td class="app-notes">${hasNotes(a.company) ? `<span class="notes-badge" title="View Q&amp;A notes">📝</span>` : ''}</td>
@@ -146,10 +136,22 @@ function renderTable(apps) {
   });
 }
 
+function filterApps(apps) {
+  let out = activeStageFilter ? apps.filter(a => a.stage === activeStageFilter) : apps;
+  if (trackerSearch) {
+    const q = trackerSearch.toLowerCase();
+    out = out.filter(a =>
+      a.company.toLowerCase().includes(q) ||
+      (a.role || '').toLowerCase().includes(q)
+    );
+  }
+  return out;
+}
+
 function renderTracker(apps) {
   renderStats(apps);
   renderStageFilters(apps);
-  renderTable(activeStageFilter ? apps.filter(a => a.stage === activeStageFilter) : apps);
+  renderTable(filterApps(apps));
 }
 
 // ---- Setup warning banner ----
@@ -181,18 +183,13 @@ async function loadTracker(refresh) {
   const btn     = document.getElementById('tracker-refresh');
   const content = document.getElementById('tracker-content');
   if (btn) btn.disabled = true;
-  content.innerHTML = `<div class="empty">⟳&thinsp; ${refresh ? 'Refreshing from Gmail…' : 'Fetching from Notion and Gmail…'}</div>`;
+  content.innerHTML = `<div class="empty">⟳&thinsp; ${refresh ? 'Refreshing…' : 'Fetching from Notion and Gmail…'}</div>`;
 
   try {
-    if (!refresh || !appsCache) {
-      const data = await fetch('/api/tracker/load').then(r => r.json());
-      appsCache = data.applications || [];
-      renderSetupBanner(data.setup || {});
-    } else {
-      const data = await fetch('/api/tracker/refresh').then(r => r.json());
-      appsCache = mergeApps(appsCache, data.applications || []);
-      renderSetupBanner(data.setup || {});
-    }
+    const url = refresh ? '/api/tracker/refresh' : '/api/tracker/load';
+    const data = await fetch(url).then(r => r.json());
+    appsCache = data.applications || [];
+    renderSetupBanner(data.setup || {});
 
     if (knownFiles.size === 0) {
       const companiesData = await fetch('/api/companies').then(r => r.json()).catch(() => []);
@@ -215,6 +212,7 @@ function openDetail(app) {
   document.getElementById('detail-company').textContent = app.company;
   document.getElementById('detail-role').textContent    = app.role || '';
   document.getElementById('detail-stage-badge').innerHTML = stageBadgeHtml(app.stage);
+  document.getElementById('detail-job-link').hidden = true;
 
   const loading = '<p class="detail-loading">Loading…</p>';
   document.getElementById('detail-jd').innerHTML       = loading;
@@ -230,26 +228,43 @@ function openDetail(app) {
   fetch(`/api/tracker/detail?${params}`)
     .then(r => r.json())
     .then(data => {
+      const linkEl = document.getElementById('detail-job-link');
+      if (data.jobUrl) {
+        linkEl.href = data.jobUrl;
+        linkEl.hidden = false;
+      }
+
       document.getElementById('detail-jd').innerHTML =
-        data.jobDescription || '<p class="detail-empty">No description in Notion.</p>';
+        data.jobDescriptionError
+          ? `<p class="detail-error">Notion error: ${esc(data.jobDescriptionError)}</p>`
+          : data.jobDescription || '<p class="detail-empty">No description in Notion.</p>';
+
+      const gmailErrorHtml = data.emailsError
+        ? `<p class="detail-error">${gmailErrorMessage(data.emailsError)}</p>`
+        : null;
 
       const emails   = (data.emails || []).filter(e => !e.isCalendar);
       const calendar = (data.emails || []).filter(e => e.isCalendar);
 
-      document.getElementById('detail-emails').innerHTML = emails.length
-        ? emails.map(emailCardHtml).join('')
-        : '<p class="detail-empty">No emails found.</p>';
+      document.getElementById('detail-emails').innerHTML =
+        gmailErrorHtml ?? (emails.length ? emails.map(emailCardHtml).join('') : '<p class="detail-empty">No emails found.</p>');
 
-      document.getElementById('detail-calendar').innerHTML = calendar.length
-        ? calendar.map(emailCardHtml).join('')
-        : '<p class="detail-empty">No calendar events found.</p>';
+      document.getElementById('detail-calendar').innerHTML =
+        gmailErrorHtml ?? (calendar.length ? calendar.map(emailCardHtml).join('') : '<p class="detail-empty">No calendar events found.</p>');
     })
     .catch(e => {
       document.getElementById('detail-jd').innerHTML =
-        `<p class="detail-empty">Error loading details: ${esc(e.message)}</p>`;
+        `<p class="detail-error">Error loading details: ${esc(e.message)}</p>`;
       document.getElementById('detail-emails').innerHTML   = '';
       document.getElementById('detail-calendar').innerHTML = '';
     });
+}
+
+function gmailErrorMessage(err) {
+  const isTokenError = /expired|revoked|invalid.?(token|grant)|Token/i.test(err);
+  if (isTokenError)
+    return `Gmail authorisation expired. <a href="/api/tracker/auth" target="_blank">Re-authorise Gmail</a> then refresh.`;
+  return `Gmail error: ${esc(err)}`;
 }
 
 function emailCardHtml(e) {
@@ -310,6 +325,11 @@ function initTrackerTabs() {
     });
   });
   document.getElementById('tracker-refresh').addEventListener('click', () => loadTracker(true));
+
+  document.getElementById('tracker-search').addEventListener('input', e => {
+    trackerSearch = e.target.value.trim();
+    if (appsCache) renderTracker(appsCache);
+  });
 }
 
 initTrackerTabs();
