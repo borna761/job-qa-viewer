@@ -629,14 +629,22 @@ function mergeGmailIntoNotion(notionApps, gmailApps) {
 
 // Fetch the most recent job-related email date for each app (lightweight — metadata only)
 async function enrichEmailDates(apps, access) {
+  const TERMINAL = new Set(['Rejected', 'Turned Down']);
+  // Companies with at least one active (non-terminal) entry — used to protect old rejected
+  // entries from getting overwritten by a newer email about a fresh application to the same company
+  const hasActiveEntry = new Set(
+    apps.filter(a => !TERMINAL.has(a.stage)).map(a => a.company.toLowerCase())
+  );
   const CONCURRENCY = 20;
   async function fetchDate(app) {
+    // Don't let a new email about a fresh application update an old rejected entry's date
+    if (TERMINAL.has(app.stage) && hasActiveEntry.has(app.company.toLowerCase())) return;
     try {
       const searchTerm = app.company
         .replace(/\b(careers?|jobs?|inc\.?|ltd\.?|corp\.?|llc\.?|co\.?|team|hr|recruiting|talent|hiring)\b/gi, '')
         .replace(/\s+/g, ' ').trim() || app.company;
       // Require company name in subject; exclude job board notification senders
-      const q = `subject:"${searchTerm}" -from:jobalerts-noreply@linkedin.com -from:hit-noreply@linkedin.com -from:jobs-noreply@linkedin.com -from:notifications-noreply@linkedin.com -from:indeed.com -from:glassdoor.com -from:ziprecruiter.com -from:monster.com -from:careerbuilder.com -from:jobgether.com newer_than:730d`;
+      const q = `subject:"${searchTerm}" -from:jobalerts-noreply@linkedin.com -from:hit-noreply@linkedin.com -from:inmail-hit-noreply@linkedin.com -from:notifications-noreply@linkedin.com -from:indeed.com -from:glassdoor.com -from:ziprecruiter.com -from:monster.com -from:careerbuilder.com -from:jobgether.com newer_than:730d`;
       const list = await gmailApiFetch(`users/me/threads?q=${encodeURIComponent(q)}&maxResults=1`, access);
       if (!list.threads?.length) return;
       const thread = await gmailApiFetch(
@@ -650,6 +658,50 @@ async function enrichEmailDates(apps, access) {
   for (let i = 0; i < apps.length; i += CONCURRENCY)
     await Promise.allSettled(apps.slice(i, i + CONCURRENCY).map(fetchDate));
 }
+
+// -- URL map for Chrome extension --
+
+let urlMapCache = null;
+let urlMapCacheTime = 0;
+const URL_MAP_TTL = 10 * 60 * 1000;
+
+async function buildUrlMap() {
+  const blocks = await fetchAllNotionBlocks(NOTION_PAGE_ID);
+  const apps = parseNotionBlocks(blocks);
+  const CONCURRENCY = 20;
+  const entries = [];
+  async function fetchOne(app) {
+    if (!app.notionPageId) return;
+    try {
+      const page = await fetch(`https://api.notion.com/v1/pages/${app.notionPageId}`, {
+        headers: { 'Authorization': `Bearer ${process.env.NOTION_TOKEN}`, 'Notion-Version': '2022-06-28' },
+      }).then(r => r.json());
+      const titleSpans = page.properties?.title?.title || [];
+      for (const span of titleSpans) {
+        const url = span.href || (span.plain_text?.match(/https?:\/\/\S+/)?.[0]);
+        if (url) { entries.push({ url, company: app.company, stage: app.stage }); break; }
+      }
+    } catch { /* skip */ }
+  }
+  for (let i = 0; i < apps.length; i += CONCURRENCY)
+    await Promise.allSettled(apps.slice(i, i + CONCURRENCY).map(fetchOne));
+  return entries;
+}
+
+app.get('/api/tracker/urls', async (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  if (!process.env.NOTION_TOKEN)
+    return res.status(503).json({ error: 'notion_not_configured' });
+  if (urlMapCache && Date.now() - urlMapCacheTime < URL_MAP_TTL)
+    return res.json(urlMapCache);
+  try {
+    urlMapCache = await buildUrlMap();
+    urlMapCacheTime = Date.now();
+    res.json(urlMapCache);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
 // -- Tracker routes --
 
@@ -871,8 +923,11 @@ app.get('/api/tracker/detail', async (req, res) => {
 
       const searchTerm = company
         .replace(/\b(careers?|jobs?|inc\.?|ltd\.?|corp\.?|llc\.?|co\.?|team|hr|recruiting|talent|hiring)\b/gi, '')
+        .replace(/[&,;|]+/g, ' ')
+        .replace(/\s*\.\s*$/, '')
         .replace(/\s+/g, ' ').trim() || company;
-      const q = `"${searchTerm}" (application OR interview OR offer OR recruiter OR hiring OR "thank you for applying" OR "next steps") -from:jobalerts-noreply@linkedin.com -from:hit-noreply@linkedin.com -from:inmail-hit-noreply@linkedin.com -from:notifications-noreply@linkedin.com -from:jobs-noreply@linkedin.com -from:indeed.com -from:glassdoor.com -from:ziprecruiter.com -from:monster.com -from:careerbuilder.com -from:jobgether.com newer_than:730d`;
+      // Use subject: so a company name appearing only in an email body (e.g. LinkedIn "top jobs" sections) doesn't pollute another company's panel
+      const q = `subject:"${searchTerm}" (application OR interview OR offer OR recruiter OR hiring OR "thank you for applying" OR "next steps") -from:jobalerts-noreply@linkedin.com -from:hit-noreply@linkedin.com -from:inmail-hit-noreply@linkedin.com -from:notifications-noreply@linkedin.com -from:indeed.com -from:glassdoor.com -from:ziprecruiter.com -from:monster.com -from:careerbuilder.com -from:jobgether.com newer_than:730d`;
       const list = await gmailApiFetch(
         `users/me/threads?q=${encodeURIComponent(q)}&maxResults=50`, access);
       await Promise.all((list.threads || []).map(async ({ id }) => {
