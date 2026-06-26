@@ -21,8 +21,9 @@ let fetchInFlight = null; // deduplicates concurrent fetchUrlMap() calls
 function normalizeUrl(raw) {
   try {
     const u = new URL(raw);
-    // Strip locale prefix like /en-CA/, /en-US/, /fr/ that some ATS platforms add
-    const path = u.pathname.replace(/^\/[a-z]{2}(-[a-z]{2})?\//i, '/').replace(/\/$/, '');
+    // Strip locale prefix like /en-CA/, /en-US/ that some ATS platforms add.
+    // Only match language-COUNTRY form (with hyphen) to avoid stripping real path segments like /ca/ or /en/.
+    const path = u.pathname.replace(/^\/[a-z]{2}-[a-z]{2}\//i, '/').replace(/\/$/, '');
     return (u.hostname + path).toLowerCase();
   } catch { return null; }
 }
@@ -119,13 +120,15 @@ async function updateTab(tabId, url) {
   const key = normalizeUrl(url);
   const match = key ? urlMap.get(key) : null;
 
-  if (match) {
-    await chrome.action.setIcon({ tabId, imageData: { 32: iconForStage(match.stage) } });
-    await chrome.action.setTitle({ tabId, title: `${match.company} — ${match.stage}` });
-  } else {
-    await chrome.action.setIcon({ tabId, imageData: { 32: ICON_NEUTRAL } });
-    await chrome.action.setTitle({ tabId, title: 'Job Tracker – not applied' });
-  }
+  try {
+    if (match) {
+      await chrome.action.setIcon({ tabId, imageData: { 32: iconForStage(match.stage) } });
+      await chrome.action.setTitle({ tabId, title: `${match.company} — ${match.stage}` });
+    } else {
+      await chrome.action.setIcon({ tabId, imageData: { 32: ICON_NEUTRAL } });
+      await chrome.action.setTitle({ tabId, title: 'Job Tracker – not applied' });
+    }
+  } catch { /* tab was closed before the async call resolved */ }
 }
 
 // ---- Lifecycle ----
