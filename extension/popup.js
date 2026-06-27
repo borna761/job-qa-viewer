@@ -167,11 +167,56 @@ function renderSaveForm(tabUrl, { role, company }) {
     btn.textContent = 'Saving...';
     statusEl.textContent = '';
 
+    // Extract job description HTML directly from the rendered page DOM.
+    // This works for SPAs (LinkedIn, Greenhouse, etc.) where server-side fetch
+    // would get an unauthenticated/incomplete page.
+    let pageHtml = '';
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      const [result] = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: () => {
+          const SELECTORS = [
+            // LinkedIn
+            '.jobs-description__content',
+            '.jobs-description',
+            '#job-details',
+            // Greenhouse
+            '#content .job__description',
+            '.job-post--description',
+            // Lever
+            '.posting-description',
+            // Workday
+            '[data-automation-id="jobPostingDescription"]',
+            // Ashby
+            '[class*="JobPosting"]',
+            // Generic
+            '[class*="job-description"]',
+            '[class*="jobDescription"]',
+            '[class*="description-content"]',
+          ];
+          for (const sel of SELECTORS) {
+            const el = document.querySelector(sel);
+            if (el && el.innerText.trim().length > 200) return el.innerHTML;
+          }
+          // Fallback: largest block of text that isn't nav/header/footer
+          let best = null, bestLen = 0;
+          for (const el of document.querySelectorAll('article, main, section, div')) {
+            if (el.closest('nav, header, footer, aside')) continue;
+            const len = el.innerText?.trim().length || 0;
+            if (len > bestLen && len < 50000) { bestLen = len; best = el; }
+          }
+          return best && bestLen > 200 ? best.innerHTML : '';
+        },
+      });
+      pageHtml = result?.result || '';
+    } catch { /* scripting not available on this page — server will re-fetch */ }
+
     try {
       const res = await fetch(`${API}/api/tracker/save`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: tabUrl, role: roleVal, company: companyVal, stage: stageVal }),
+        body: JSON.stringify({ url: tabUrl, role: roleVal, company: companyVal, stage: stageVal, pageHtml }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || res.statusText);
