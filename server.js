@@ -620,13 +620,27 @@ function mergeGmailIntoNotion(notionApps, gmailApps) {
     if (!byCompany.has(key)) byCompany.set(key, []);
     byCompany.get(key).push(a);
   }
+  // Determine the single primary (most active) entry per company for stage updates.
+  // When multiple roles exist at the same company, we can't tell which Gmail email
+  // belongs to which role, so only the primary entry gets its stage updated.
+  const primaryByCompany = new Map();
+  for (const a of apps) {
+    const key = a.company.toLowerCase();
+    const existing = primaryByCompany.get(key);
+    const rank = TRACKER_STAGE_RANK[a.stage] ?? 99;
+    const existingRank = existing ? (TRACKER_STAGE_RANK[existing.stage] ?? 99) : 999;
+    if (rank < existingRank) primaryByCompany.set(key, a);
+  }
   for (const g of gmailApps) {
     if (!g.company) continue;
     const matches = byCompany.get(g.company.toLowerCase()) || [];
+    const primary = primaryByCompany.get(g.company.toLowerCase());
     for (const app of matches) {
-      if ((TRACKER_STAGE_RANK[g.stage] ?? -1) > (TRACKER_STAGE_RANK[app.stage] ?? -1))
+      // Only upgrade stage on the primary entry — avoids bleeding a rejection email
+      // from one role into a separate role at the same company.
+      if (app === primary && (TRACKER_STAGE_RANK[g.stage] ?? -1) > (TRACKER_STAGE_RANK[app.stage] ?? -1))
         app.stage = g.stage;
-      // Always take the most recent email date
+      // Always take the most recent email date for all entries
       if (g.lastUpdate && (!app.lastUpdate || g.lastUpdate > app.lastUpdate))
         app.lastUpdate = g.lastUpdate;
     }
@@ -685,7 +699,7 @@ async function enrichEmailDates(apps, access) {
             `users/me/threads/${list.threads[0].id}?format=metadata&metadataHeaders=Date`, access);
           const last = (thread.messages || []).at(-1);
           if (last?.internalDate) {
-            const date = new Date(+last.internalDate).toISOString().split('T')[0];
+            const date = new Date(+last.internalDate).toISOString();
             if (!app.lastUpdate || date > app.lastUpdate) app.lastUpdate = date;
           }
           return; // found role-specific match — don't fall through to company-only
