@@ -10,45 +10,49 @@ const STAGE_COLOR = {
   'Rejected':    '#dc2626',
 };
 
-// In-memory map rebuilt from storage on each service-worker wake
-let urlMap = null; // null = not loaded yet
+let urlMap = null;
 let serverOnline = true;
-let fetchInFlight = null; // deduplicates concurrent fetchUrlMap() calls
+let fetchInFlight = null;
 
 // ---- URL normalisation ----
 
 function normalizeUrl(raw) {
   try {
     const u = new URL(raw);
-    // Strip locale prefix like /en-CA/, /en-US/ that some ATS platforms add.
-    // Only match language-COUNTRY form (with hyphen) to avoid stripping real path segments like /ca/ or /en/.
-    const path = u.pathname.replace(/^\/[a-z]{2}-[a-z]{2}\//i, '/').replace(/\/$/, '');
+    let path = u.pathname.replace(/^\/[a-z]{2}-[a-z]{2}\//i, '/').replace(/\/$/, '');
+    path = path.replace(/\/job\/[^/]+\/(.*_r\d+[^/]*)/i, '/job/$1');
     return (u.hostname + path).toLowerCase();
   } catch { return null; }
 }
 
-// ---- Icon generation ----
+// ---- Icon generation (lazy, fully guarded) ----
+
+const ICON_CACHE = new Map();
 
 function makeImageData(fillColor, opacity = 1) {
-  const size = 32;
-  const canvas = new OffscreenCanvas(size, size);
-  const ctx = canvas.getContext('2d');
-  ctx.globalAlpha = opacity;
-  ctx.beginPath();
-  ctx.arc(size / 2, size / 2, size / 2 - 1, 0, Math.PI * 2);
-  ctx.fillStyle = fillColor;
-  ctx.fill();
-  return ctx.getImageData(0, 0, size, size);
+  try {
+    const size = 32;
+    const canvas = new OffscreenCanvas(size, size);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    ctx.globalAlpha = opacity;
+    ctx.beginPath();
+    ctx.arc(size / 2, size / 2, size / 2 - 1, 0, Math.PI * 2);
+    ctx.fillStyle = fillColor;
+    ctx.fill();
+    return ctx.getImageData(0, 0, size, size);
+  } catch { return null; }
 }
-
-const ICON_OFFLINE = makeImageData('#9ca3af', 0.35);
-const ICON_NEUTRAL = makeImageData('#6b7280');
-const ICON_CACHE   = new Map();
 
 function iconForStage(stage) {
   if (!ICON_CACHE.has(stage))
     ICON_CACHE.set(stage, makeImageData(STAGE_COLOR[stage] || '#6b7280'));
   return ICON_CACHE.get(stage);
+}
+
+async function setIcon(tabId, imageData) {
+  if (!imageData) return;
+  try { await chrome.action.setIcon({ tabId, imageData: { 32: imageData } }); } catch {}
 }
 
 // ---- Persist / restore URL map via storage ----
@@ -68,18 +72,18 @@ function buildMapFromEntries(entries) {
 
 async function ensureMap() {
   if (urlMap !== null) return;
-  // Restore from storage so we don't show "not matched" while the fetch is in flight
   const { urlEntries } = await chrome.storage.local.get('urlEntries');
   urlMap = urlEntries ? buildMapFromEntries(urlEntries) : new Map();
 }
 
 // ---- Fetch fresh data from local server ----
 
-async function fetchUrlMap() {
+async function fetchUrlMap(force = false) {
   if (fetchInFlight) return fetchInFlight;
   fetchInFlight = (async () => {
     try {
-      const entries = await fetch(API).then(r => {
+      const url = force ? `${API}?force=1` : API;
+      const entries = await fetch(url).then(r => {
         if (!r.ok) throw new Error(r.status);
         return r.json();
       });
@@ -88,12 +92,14 @@ async function fetchUrlMap() {
       serverOnline = true;
     } catch {
       serverOnline = false;
-      await ensureMap(); // fall back to cached storage
+      await ensureMap();
     } finally {
       fetchInFlight = null;
     }
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (tab) updateTab(tab.id, tab.url);
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (tab) await updateTab(tab.id, tab.url);
+    } catch {}
   })();
   return fetchInFlight;
 }
@@ -101,50 +107,61 @@ async function fetchUrlMap() {
 // ---- Update a single tab ----
 
 async function updateTab(tabId, url) {
-  await ensureMap();
-  // If map is still empty after storage load, wait for the in-flight fetch (or start one)
-  if (urlMap.size === 0) await fetchUrlMap();
-
-  if (!url || !url.startsWith('http')) {
-    await chrome.action.setIcon({ tabId, imageData: { 32: ICON_NEUTRAL } });
-    await chrome.action.setTitle({ tabId, title: 'Job Tracker' });
-    return;
-  }
-  if (!serverOnline && urlMap.size === 0) {
-    await chrome.action.setIcon({ tabId, imageData: { 32: ICON_OFFLINE } });
-    await chrome.action.setTitle({ tabId, title: 'Job Tracker – server unreachable' });
-    return;
-  }
-
-  const key = normalizeUrl(url);
-  const match = key ? urlMap.get(key) : null;
-
   try {
+    await ensureMap();
+    if (urlMap.size === 0) await fetchUrlMap();
+
+    if (!url || !url.startsWith('http')) {
+      await setIcon(tabId, makeImageData('#6b7280'));
+      await chrome.action.setTitle({ tabId, title: 'Job Tracker' });
+      return;
+    }
+    if (!serverOnline && urlMap.size === 0) {
+      await setIcon(tabId, makeImageData('#9ca3af', 0.35));
+      await chrome.action.setTitle({ tabId, title: 'Job Tracker - server unreachable' });
+      return;
+    }
+
+    const key = normalizeUrl(url);
+    const match = key ? urlMap.get(key) : null;
+
     if (match) {
-      await chrome.action.setIcon({ tabId, imageData: { 32: iconForStage(match.stage) } });
+      await setIcon(tabId, iconForStage(match.stage));
       await chrome.action.setTitle({ tabId, title: `${match.company} — ${match.stage}` });
     } else {
-      await chrome.action.setIcon({ tabId, imageData: { 32: ICON_NEUTRAL } });
-      await chrome.action.setTitle({ tabId, title: 'Job Tracker – not applied' });
+      await setIcon(tabId, makeImageData('#6b7280'));
+      await chrome.action.setTitle({ tabId, title: 'Job Tracker - not applied' });
     }
-  } catch { /* tab was closed before the async call resolved */ }
+  } catch {}
 }
 
 // ---- Lifecycle ----
 
-chrome.runtime.onInstalled.addListener(fetchUrlMap);
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.alarms.create('refresh', { periodInMinutes: REFRESH_MINUTES });
+  fetchUrlMap();
+});
 chrome.runtime.onStartup.addListener(fetchUrlMap);
-
-chrome.alarms.create('refresh', { periodInMinutes: REFRESH_MINUTES });
 chrome.alarms.onAlarm.addListener(alarm => {
   if (alarm.name === 'refresh') fetchUrlMap();
 });
 
 chrome.tabs.onActivated.addListener(async ({ tabId }) => {
-  const tab = await chrome.tabs.get(tabId);
-  updateTab(tabId, tab.url);
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    await updateTab(tabId, tab.url);
+  } catch {}
 });
 
-chrome.tabs.onUpdated.addListener((tabId, change, tab) => {
-  if (change.url) updateTab(tabId, change.url);
+chrome.tabs.onUpdated.addListener(async (tabId, change, tab) => {
+  if (change.url || change.status === 'complete') await updateTab(tabId, tab.url);
+});
+
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg.type === 'refresh') {
+    urlMap = null;
+    if (msg.force) fetchInFlight = null; // bypass in-flight non-force fetch
+    fetchUrlMap(msg.force).then(() => sendResponse({ ok: true }));
+    return true;
+  }
 });

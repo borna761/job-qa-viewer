@@ -391,11 +391,17 @@ const GMAIL_QUERY_DAY  = 'subject:(application OR interview OR offer OR recruite
 
 // -- Notion --
 
-async function notionFetch(endpoint) {
+async function notionFetch(endpoint, options = {}) {
   const token = process.env.NOTION_TOKEN;
   if (!token) throw Object.assign(new Error('NOTION_TOKEN not set'), { code: 'missing_token' });
   const res = await fetch(`https://api.notion.com/v1/${endpoint}`, {
-    headers: { Authorization: `Bearer ${token}`, 'Notion-Version': '2022-06-28' },
+    ...options,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Notion-Version': '2022-06-28',
+      'Content-Type': 'application/json',
+      ...(options.headers || {}),
+    },
   });
   if (!res.ok) throw new Error(`Notion API ${res.status}: ${await res.text()}`);
   return res.json();
@@ -442,7 +448,7 @@ function parseTitleToApp(block, stage) {
 async function loadNotionApps() {
   const topBlocks  = await fetchAllNotionBlocks(NOTION_PAGE_ID);
   const stagePages = topBlocks.filter(b => {
-    if (b.type !== 'child_page') return false;
+    if (b.type !== 'child_page' || b.archived || b.in_trash) return false;
     const key = b.child_page.title.toLowerCase().replace(/[^a-z]/g, '');
     return !!NOTION_SECTION_MAP[key];
   });
@@ -458,7 +464,7 @@ async function loadNotionApps() {
   const apps = [];
   for (const { stage, children } of stageResults) {
     for (const child of children) {
-      if (child.type !== 'child_page') continue;
+      if (child.type !== 'child_page' || child.archived || child.in_trash) continue;
       const app = parseTitleToApp(child, stage);
       if (app) apps.push(app);
     }
@@ -565,11 +571,8 @@ function extractCompany(from, subject) {
 
 function classifyThread(subject, snippet) {
   const t = (subject + ' ' + (snippet || '')).toLowerCase();
-  if (/offer letter|pleased to offer|extending an offer|compensation package/i.test(t)) return 'Offer';
   if (/not moving forward|not selected|other candidates|position.*filled|won.t be moving|unfortunately.*not|regret to inform/i.test(t)) return 'Rejected';
   if (/(interview|technical screen|coding (challenge|test)|take.home|on.site|virtual interview).*(scheduled|invitation|confirmed|link)|hiring manager (call|interview)/i.test(t)) return 'Interviews';
-  if (/(phone screen|intro call|initial (call|screen|chat)|recruiter (call|chat|interview)|(scheduled|set up|book) a (call|chat|screen))/i.test(t)) return 'Phone Screen';
-  if (/on hold|put.*on hold|pause|delay/i.test(t)) return 'On Hold';
   return 'Applied';
 }
 
@@ -711,7 +714,7 @@ async function enrichEmailDates(apps, access) {
 
 let urlMapCache = null;
 let urlMapCacheTime = 0;
-const URL_MAP_TTL = 10 * 60 * 1000;
+const URL_MAP_TTL = 60 * 1000;
 
 async function buildUrlMap() {
   const apps = await loadNotionApps();
@@ -724,7 +727,10 @@ async function buildUrlMap() {
       const titleSpans = page.properties?.title?.title || [];
       for (const span of titleSpans) {
         const url = span.href || span.text?.link?.url;
-        if (url) { entries.push({ url, company: app.company, stage: app.stage }); break; }
+        if (url) {
+          entries.push({ url, company: app.company, stage: app.stage, role: app.role || null, lastUpdate: app.lastUpdate || null, notionPageId: app.notionPageId });
+          break;
+        }
       }
     } catch { /* skip */ }
   }
@@ -737,12 +743,258 @@ app.get('/api/tracker/urls', async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   if (!process.env.NOTION_TOKEN)
     return res.status(503).json({ error: 'notion_not_configured' });
-  if (urlMapCache && Date.now() - urlMapCacheTime < URL_MAP_TTL)
+  if (urlMapCache && Date.now() - urlMapCacheTime < URL_MAP_TTL && !req.query.force)
     return res.json(urlMapCache);
   try {
     urlMapCache = await buildUrlMap();
     urlMapCacheTime = Date.now();
     res.json(urlMapCache);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+function htmlToNotionBlocks(html) {
+  const MAX = 2000;
+  const blocks = [];
+
+  function decode(s) {
+    return s
+      .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>').replace(/&quot;/g, '"')
+      .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(+n))
+      .replace(/&[a-z]+;/gi, ' ');
+  }
+
+  function parseRichText(inner) {
+    const rt = [];
+    let bold = false, italic = false, code = false;
+    const re = /(<(\/?)(?:strong|b|em|i|code)\b[^>]*>)|(<[^>]+>)|([^<]+)/gi;
+    let m;
+    while ((m = re.exec(inner)) !== null) {
+      if (m[1]) {
+        const closing = m[2] === '/';
+        const tag = (m[1].match(/<\/?(\w+)/) || [])[1]?.toLowerCase();
+        if (tag === 'strong' || tag === 'b') bold = !closing;
+        else if (tag === 'em' || tag === 'i') italic = !closing;
+        else if (tag === 'code') code = !closing;
+      } else if (m[4]) {
+        const text = decode(m[4]);
+        if (!text) continue;
+        for (let i = 0; i < text.length; i += MAX) {
+          const item = { type: 'text', text: { content: text.slice(i, i + MAX) } };
+          const ann = {};
+          if (bold) ann.bold = true;
+          if (italic) ann.italic = true;
+          if (code) ann.code = true;
+          if (Object.keys(ann).length) item.annotations = ann;
+          rt.push(item);
+        }
+      }
+    }
+    return rt.filter(r => r.text.content);
+  }
+
+  function push(type, inner) {
+    if (blocks.length >= 95) return;
+    const rt = parseRichText(inner.replace(/<br\s*\/?>/gi, ' '));
+    if (!rt.length) return;
+    blocks.push({ object: 'block', type, [type]: { rich_text: rt } });
+  }
+
+  html = html
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<nav\b[^>]*>[\s\S]*?<\/nav>/gi, '')
+    .replace(/<header\b[^>]*>[\s\S]*?<\/header>/gi, '')
+    .replace(/<footer\b[^>]*>[\s\S]*?<\/footer>/gi, '');
+
+  // Prefer <main> content to avoid sidebars and widgets
+  const mainMatch = html.match(/<main\b[^>]*>([\s\S]*?)<\/main>/i);
+  if (mainMatch) html = mainMatch[1];
+
+  const blockRe = /<(h[1-6]|p|li)\b[^>]*>([\s\S]*?)<\/\1\s*>/gi;
+  let lastIndex = 0;
+
+  for (const m of [...html.matchAll(blockRe)]) {
+    const between = decode(html.slice(lastIndex, m.index).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ')).trim();
+    if (between) push('paragraph', between);
+
+    const tag = m[1].toLowerCase();
+    const inner = m[2];
+    if (tag === 'h1') push('heading_1', inner);
+    else if (tag === 'h2') push('heading_2', inner);
+    else if (/^h/.test(tag)) push('heading_3', inner);
+    else if (tag === 'li') push('bulleted_list_item', inner);
+    else push('paragraph', inner);
+
+    lastIndex = m.index + m[0].length;
+  }
+
+  const tail = decode(html.slice(lastIndex).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ')).trim();
+  if (tail) push('paragraph', tail);
+
+  return blocks;
+}
+
+function plainTextToNotionBlocks(text) {
+  const MAX = 2000;
+  const blocks = [];
+
+  function para(content) {
+    if (!content || blocks.length >= 95) return;
+    for (let i = 0; i < content.length; i += MAX) {
+      if (blocks.length >= 95) break;
+      blocks.push({ object: 'block', type: 'paragraph',
+        paragraph: { rich_text: [{ type: 'text', text: { content: content.slice(i, i + MAX) } }] } });
+    }
+  }
+
+  function heading(content) {
+    if (!content || blocks.length >= 95) return;
+    blocks.push({ object: 'block', type: 'heading_3',
+      heading_3: { rich_text: [{ type: 'text', text: { content: content.slice(0, MAX) } }] } });
+  }
+
+  function bullet(content) {
+    if (!content || blocks.length >= 95) return;
+    blocks.push({ object: 'block', type: 'bulleted_list_item',
+      bulleted_list_item: { rich_text: [{ type: 'text', text: { content: content.slice(0, MAX) } }] } });
+  }
+
+  // Sections where the body text is a list of items (sentences → bullets)
+  const LIST_SECTION = /^(responsibilities|requirements|qualifications|what you may need|need to be successful|key responsibilities|your responsibilities)/i;
+
+  // Pre-process: split on embedded section headers so each appears on its own line
+  let normalised = text
+    // "end. Header: start" — colon-terminated headers (max 40 chars before colon)
+    .replace(/\.\s+([A-Z][^.:!?\n]{3,40}:)\s+/g, ".\n$1\n")
+    // "end. Why Join Us?" — question-mark headers
+    .replace(/\.\s+([A-Z][^.:!?\n]{5,60}\?)\s+/g, ".\n$1\n")
+    // Known no-colon headers common in Workday JDs
+    .replace(/\.\s+(What You.ll Do)\s+/g, ".\nWhat You'll Do\n")
+    .replace(/\.\s+(About [A-Z][A-Za-z ]{2,25})\s+(?=[A-Z])/g, ".\n$1\n")
+    // Middle-dot and standard bullets
+    .replace(/\s*[·•]\s*/g, "\n• ")
+    .replace(/\n[-*]\s+/g, "\n• ");
+
+  const lines = normalised.split('\n').map(l => l.trim()).filter(Boolean);
+
+  let inListSection = false;
+
+  for (const line of lines) {
+    if (blocks.length >= 95) break;
+
+    if (line.startsWith('• ')) {
+      inListSection = false;
+      bullet(line.slice(2).trim());
+      continue;
+    }
+
+    // Detect section headers: standalone short phrase ending with ":" or "?"
+    const headerMatch = line.match(/^([A-Z][^.:!?]{2,70})[?:]$/);
+    if (headerMatch) {
+      const label = headerMatch[1].trim();
+      heading(label);
+      inListSection = LIST_SECTION.test(label);
+      continue;
+    }
+
+    // In a list-type section, split content into individual bullet sentences
+    if (inListSection) {
+      const sentences = line.split(/\.\s+(?=[A-Z])/).map(s => s.replace(/\.$/, '').trim()).filter(Boolean);
+      if (sentences.length > 1) {
+        sentences.forEach(s => bullet(s));
+        inListSection = false;
+        continue;
+      }
+    }
+
+    inListSection = false;
+    para(line);
+  }
+
+  return blocks;
+}
+
+app.post('/api/tracker/save', async (req, res) => {
+  const { url, role, company, stage } = req.body || {};
+  if (!url || !company || !stage)
+    return res.status(400).json({ error: 'url, company, and stage are required' });
+  if (!process.env.NOTION_TOKEN)
+    return res.status(503).json({ error: 'notion_not_configured' });
+  try {
+    const topBlocks = await fetchAllNotionBlocks(NOTION_PAGE_ID);
+    const stagePage = topBlocks.find(b => {
+      if (b.type !== 'child_page') return false;
+      return b.child_page.title.toLowerCase() === stage.toLowerCase();
+    });
+    if (!stagePage)
+      return res.status(404).json({ error: `No Notion page found for stage "${stage}"` });
+
+    const linkText = '[🔗 link]';
+    const bodyText = role ? ` — ${role} | ${company}` : ` — ${company}`;
+
+    // Fetch job description from the posting URL
+    let children = [];
+    try {
+      const html = await fetch(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
+        signal: AbortSignal.timeout(8000),
+      }).then(r => r.text());
+
+      let ldPlainText = '';
+      const ldMatch = html.match(/<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/i);
+      if (ldMatch) {
+        try {
+          const ld = JSON.parse(ldMatch[1]);
+          const posting = Array.isArray(ld)
+            ? ld.find(x => x['@type'] === 'JobPosting')
+            : ld['@type'] === 'JobPosting' ? ld : null;
+          if (posting?.description) {
+            if (/<[a-z]/i.test(posting.description)) {
+              // JSON-LD has HTML markup — use it directly
+              children = htmlToNotionBlocks(posting.description);
+            } else {
+              ldPlainText = posting.description;
+            }
+          }
+        } catch { /* malformed JSON-LD */ }
+      }
+
+      // If JSON-LD gave us blocks, we're done. Otherwise try the raw page HTML
+      // (works for server-rendered pages; SPAs will yield 0 blocks here).
+      if (!children.length) {
+        const htmlBlocks = htmlToNotionBlocks(html);
+        console.log('[save] ld_plain:', !!ldPlainText, 'ld_html_blocks:', children.length, 'html_blocks:', htmlBlocks.length, 'has_main:', /<main\b/i.test(html), 'url:', url.slice(0,80));
+        children = htmlBlocks;
+      }
+
+      // Last resort: JSON-LD plain text — parse structure heuristically
+      if (!children.length && ldPlainText) {
+        children = plainTextToNotionBlocks(ldPlainText);
+        console.log('[save] plaintext blocks:', children.length, 'snippet:', JSON.stringify(ldPlainText.slice(0, 200)));
+      }
+    } catch { /* fetch failed — save without description */ }
+
+    const page = await notionFetch('pages', {
+      method: 'POST',
+      body: JSON.stringify({
+        parent: { page_id: stagePage.id },
+        properties: {
+          title: {
+            title: [
+              { type: 'text', text: { content: linkText, link: { url } } },
+              { type: 'text', text: { content: bodyText } },
+            ],
+          },
+        },
+        ...(children.length ? { children } : {}),
+      }),
+    });
+
+    urlMapCache = null; // force extension to re-fetch
+    res.json({ ok: true, pageId: page.id });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -866,13 +1118,22 @@ function stripTemplateVars(s) {
   return s.replace(/\{\{[^}]*\}\}/g, '').replace(/\{%[^%]*%\}/g, '');
 }
 
+function sanitizeEmailHtml(html) {
+  return html
+    .replace(/<script\b[\s\S]*?<\/script>/gi, '')
+    .replace(/<style\b[\s\S]*?<\/style>/gi, '')
+    .replace(/\bon\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]*)/gi, '')
+    .replace(/href\s*=\s*["']?\s*javascript:[^"'\s>]*/gi, 'href="#"')
+    .replace(/src\s*=\s*["']?\s*javascript:[^"'\s>]*/gi, '');
+}
+
 function emailBodyToHtml(bodyResult, snippet) {
   if (!bodyResult) return escHtml(snippet || '');
   if (bodyResult.html) {
     let h = bodyResult.content;
     const bodyMatch = h.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
     if (bodyMatch) h = bodyMatch[1];
-    return stripTemplateVars(stripHtmlQuotes(h));
+    return sanitizeEmailHtml(stripTemplateVars(stripHtmlQuotes(h)));
   }
   const stripped = stripPlainQuotes(bodyResult.content);
   return `<pre style="white-space:pre-wrap;word-break:break-word;font-family:inherit">${escHtml(stripTemplateVars(stripped || bodyResult.content))}</pre>`;
@@ -965,6 +1226,7 @@ app.get('/api/tracker/detail', async (req, res) => {
       const myEmail = (profile.emailAddress || '').toLowerCase();
 
       const searchTerm = company
+        .replace(/"/g, '')
         .replace(/\b(careers?|jobs?|inc\.?|ltd\.?|corp\.?|llc\.?|co\.?|team|hr|recruiting|talent|hiring)\b/gi, '')
         .replace(/[&,;|]+/g, ' ')
         .replace(/\s*\.\s*$/, '')

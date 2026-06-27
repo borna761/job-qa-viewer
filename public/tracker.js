@@ -110,8 +110,8 @@ function renderTable(apps) {
         <th>Role</th><th>Company</th><th>Stage</th><th>Last Update</th><th>Notes</th>
       </tr></thead>
       <tbody>
-        ${sorted.map(a => `
-          <tr class="app-row" data-company="${esc(a.company)}">
+        ${sorted.map((a, i) => `
+          <tr class="app-row" data-idx="${i}" data-company="${esc(a.company)}">
             <td class="app-role">${esc(a.role || '—')}</td>
             <td class="app-company">${esc(a.company)}</td>
             <td>${stageBadgeHtml(a.stage)}</td>
@@ -126,8 +126,7 @@ function renderTable(apps) {
   content.querySelectorAll('.app-row').forEach(row => {
     row.addEventListener('click', e => {
       if (e.target.closest('.notes-badge')) return;
-      const app = (activeStageFilter ? appsCache.filter(a => a.stage === activeStageFilter) : appsCache)
-        .find(a => a.company === row.dataset.company);
+      const app = sorted[+row.dataset.idx];
       if (app) openDetail(app);
     });
   });

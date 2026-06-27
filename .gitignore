@@ -1,6 +1,7 @@
 node_modules/
 .DS_Store
 .env
+*.bak
 
 # Claude Code local settings (may contain local paths / private data)
 .claude/settings.local.json
