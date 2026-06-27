@@ -47,7 +47,7 @@ function stageBadgeHtml(stage) {
 function formatDate(dateStr) {
   if (!dateStr) return '—';
   try {
-    return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-CA', {
+    return new Date(dateStr).toLocaleDateString('en-CA', {
       month: 'short', day: 'numeric', year: 'numeric',
     });
   } catch { return dateStr; }

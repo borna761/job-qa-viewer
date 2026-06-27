@@ -432,7 +432,7 @@ const NOTION_SECTION_MAP = {
 
 function parseTitleToApp(block, stage) {
   const title      = block.child_page?.title || '';
-  const lastUpdate = block.created_time?.split('T')[0] || null;
+  const lastUpdate = block.last_edited_time || null;
   // Title format: "[🔗 link] — Role | Company"
   const body    = title.replace(/^\[.*?\]\s*[—–-]\s*/, '');
   const pipeIdx = body.indexOf(' | ');
@@ -594,7 +594,7 @@ async function fetchGmailApps(query) {
         company,
         role:       null,
         stage:      classifyThread(hdrs['Subject'] || '', lastMsg.snippet || ''),
-        lastUpdate: lastMsg.internalDate ? new Date(+lastMsg.internalDate).toISOString().split('T')[0] : null,
+        lastUpdate: lastMsg.internalDate ? new Date(+lastMsg.internalDate).toISOString() : null,
         source:     'gmail',
       });
     } catch { /* skip */ }
