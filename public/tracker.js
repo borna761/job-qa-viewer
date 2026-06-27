@@ -1,26 +1,24 @@
 // ---- Applications Tracker ----
 
-const STAGES = ['Applied', 'Phone Screen', 'On Hold', 'Interviews', 'Offer', 'Rejected', 'Turned Down'];
+const STAGES = ['Interviews', 'Applied', 'Interested', 'Stale', 'Turned Down', 'Rejected'];
 const STAGE_RANK = Object.fromEntries(STAGES.map((s, i) => [s, i]));
 
 // Display sort order: active stages first, terminal stages last
 const STAGE_SORT = {
-  'Interviews':   0,
-  'Offer':        1,
-  'Phone Screen': 2,
-  'Applied':      3,
-  'On Hold':      4,
-  'Turned Down':  5,
-  'Rejected':     6,
+  'Interviews':  0,
+  'Applied':     1,
+  'Interested':  2,
+  'Stale':       3,
+  'Turned Down': 4,
+  'Rejected':    5,
 };
 const STAGE_COLORS = {
-  'Applied':      { bg: '#dbeafe', color: '#1d4ed8' },
-  'Phone Screen': { bg: '#fef9c3', color: '#854d0e' },
-  'On Hold':      { bg: '#f3f4f6', color: '#6b7280' },
-  'Interviews':   { bg: '#ede9fe', color: '#5b21b6' },
-  'Offer':        { bg: '#dcfce7', color: '#15803d' },
-  'Rejected':     { bg: '#fee2e2', color: '#b91c1c' },
-  'Turned Down':  { bg: '#fff7ed', color: '#c2410c' },
+  'Interested':  { bg: '#ecfeff', color: '#0891b2' },
+  'Applied':     { bg: '#dbeafe', color: '#1d4ed8' },
+  'Interviews':  { bg: '#ede9fe', color: '#5b21b6' },
+  'Stale':       { bg: '#f3f4f6', color: '#6b7280' },
+  'Turned Down': { bg: '#fff7ed', color: '#c2410c' },
+  'Rejected':    { bg: '#fee2e2', color: '#b91c1c' },
 };
 
 let appsCache        = null;
@@ -56,14 +54,16 @@ function formatDate(dateStr) {
 }
 
 function renderStats(apps) {
-  const interviews  = apps.filter(a => a.stage === 'Interviews').length;
-  const awaiting    = apps.filter(a => a.stage === 'Applied' || a.stage === 'Phone Screen').length;
-  const turnedDown  = apps.filter(a => a.stage === 'Turned Down').length;
-  const rejected    = apps.filter(a => a.stage === 'Rejected').length;
+  const interviews = apps.filter(a => a.stage === 'Interviews').length;
+  const applied    = apps.filter(a => a.stage === 'Applied').length;
+  const stale      = apps.filter(a => a.stage === 'Stale').length;
+  const turnedDown = apps.filter(a => a.stage === 'Turned Down').length;
+  const rejected   = apps.filter(a => a.stage === 'Rejected').length;
   document.getElementById('tracker-stats').innerHTML = `
     <div class="stat-chip">${apps.length} <span>Total</span></div>
     <div class="stat-chip stat-interviews">${interviews} <span>Interviewing</span></div>
-    <div class="stat-chip stat-awaiting">${awaiting} <span>Awaiting</span></div>
+    <div class="stat-chip stat-awaiting">${applied} <span>Applied</span></div>
+    ${stale ? `<div class="stat-chip stat-stale">${stale} <span>Stale</span></div>` : ''}
     ${turnedDown ? `<div class="stat-chip stat-turneddown">${turnedDown} <span>Turned Down</span></div>` : ''}
     <div class="stat-chip stat-rejected">${rejected} <span>Rejected</span></div>
   `;
