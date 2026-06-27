@@ -631,10 +631,27 @@ function mergeGmailIntoNotion(notionApps, gmailApps) {
   return apps;
 }
 
+// Extract distinctive terms from a role title for role-specific email search.
+// Strips generic title words so "Senior Product Manager – Data Platform" → "Data Platform".
+// Returns null when nothing distinctive remains (< 2 words), signalling fallback to company-only.
+const ROLE_STRIP = /\b(senior|junior|lead|principal|staff|associate|sr|jr|product|manager|owner|analyst|pm|po|tpm|tpo|cpo|vp|head|director|remote|canada|canadian|multiple|levels|available|contract|interim|part.?time|full.?time)\b/gi;
+
+function roleSearchTerm(role) {
+  if (!role) return null;
+  const words = role
+    .replace(/\(.*?\)/g, ' ')
+    .replace(ROLE_STRIP, ' ')
+    .replace(/[-–—|,\/&+]/g, ' ')
+    .split(/\s+/)
+    .map(w => w.trim())
+    .filter(w => w.length > 2);
+  return words.length >= 2 ? words.slice(0, 3).join(' ') : null;
+}
+
 // Fetch the most recent job-related email date for each app (lightweight — metadata only)
 async function enrichEmailDates(apps, access) {
-  // For companies with multiple entries, only enrich the most-active one (lowest stage rank).
-  // This prevents a new email about one application from contaminating the date of another.
+  // For entries where we can't extract a distinctive role term, fall back to a company-only
+  // search — but only for the most-active entry per company to avoid cross-contamination.
   const primaryIdByCompany = new Map();
   for (const app of apps) {
     const key = app.company.toLowerCase();
@@ -645,15 +662,36 @@ async function enrichEmailDates(apps, access) {
   }
   const primaryIds = new Set([...primaryIdByCompany.values()].map(a => a.notionPageId));
 
+  const EXCLUDE = '-from:jobalerts-noreply@linkedin.com -from:hit-noreply@linkedin.com -from:inmail-hit-noreply@linkedin.com -from:notifications-noreply@linkedin.com -from:indeed.com -from:glassdoor.com -from:ziprecruiter.com -from:monster.com -from:careerbuilder.com -from:jobgether.com';
   const CONCURRENCY = 20;
+
   async function fetchDate(app) {
-    if (!primaryIds.has(app.notionPageId)) return;
+    const companyTerm = app.company
+      .replace(/\b(careers?|jobs?|inc\.?|ltd\.?|corp\.?|llc\.?|co\.?|team|hr|recruiting|talent|hiring)\b/gi, '')
+      .replace(/\s+/g, ' ').trim() || app.company;
+
+    const roleTerm = roleSearchTerm(app.role);
+
     try {
-      const searchTerm = app.company
-        .replace(/\b(careers?|jobs?|inc\.?|ltd\.?|corp\.?|llc\.?|co\.?|team|hr|recruiting|talent|hiring)\b/gi, '')
-        .replace(/\s+/g, ' ').trim() || app.company;
-      // Require company name in subject; exclude job board notification senders
-      const q = `subject:"${searchTerm}" -from:jobalerts-noreply@linkedin.com -from:hit-noreply@linkedin.com -from:inmail-hit-noreply@linkedin.com -from:notifications-noreply@linkedin.com -from:indeed.com -from:glassdoor.com -from:ziprecruiter.com -from:monster.com -from:careerbuilder.com -from:jobgether.com newer_than:730d`;
+      // 1. Role-specific search — works for any entry regardless of primary status
+      if (roleTerm) {
+        const q = `subject:"${companyTerm}" "${roleTerm}" ${EXCLUDE} newer_than:730d`;
+        const list = await gmailApiFetch(`users/me/threads?q=${encodeURIComponent(q)}&maxResults=1`, access);
+        if (list.threads?.length) {
+          const thread = await gmailApiFetch(
+            `users/me/threads/${list.threads[0].id}?format=metadata&metadataHeaders=Date`, access);
+          const last = (thread.messages || []).at(-1);
+          if (last?.internalDate) {
+            const date = new Date(+last.internalDate).toISOString().split('T')[0];
+            if (!app.lastUpdate || date > app.lastUpdate) app.lastUpdate = date;
+          }
+          return; // found role-specific match — don't fall through to company-only
+        }
+      }
+
+      // 2. Company-only fallback — restricted to the most-active entry per company
+      if (!primaryIds.has(app.notionPageId)) return;
+      const q = `subject:"${companyTerm}" ${EXCLUDE} newer_than:730d`;
       const list = await gmailApiFetch(`users/me/threads?q=${encodeURIComponent(q)}&maxResults=1`, access);
       if (!list.threads?.length) return;
       const thread = await gmailApiFetch(
@@ -664,6 +702,7 @@ async function enrichEmailDates(apps, access) {
       if (!app.lastUpdate || date > app.lastUpdate) app.lastUpdate = date;
     } catch { /* skip */ }
   }
+
   for (let i = 0; i < apps.length; i += CONCURRENCY)
     await Promise.allSettled(apps.slice(i, i + CONCURRENCY).map(fetchDate));
 }
