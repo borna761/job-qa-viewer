@@ -602,8 +602,9 @@ async function fetchGmailApps(query) {
 // -- Tracker merge (server-side) --
 // Notion is the source of truth — Gmail only updates stage/date for existing entries.
 
+// Lower rank = more active/important (used to pick the "primary" entry per company for email enrichment)
 const TRACKER_STAGE_RANK = Object.fromEntries(
-  ['Applied', 'Phone Screen', 'On Hold', 'Interviews', 'Offer', 'Rejected'].map((s, i) => [s, i])
+  ['Interviews', 'Applied', 'Interested', 'Stale', 'Turned Down', 'Rejected'].map((s, i) => [s, i])
 );
 
 function mergeGmailIntoNotion(notionApps, gmailApps) {
@@ -632,16 +633,21 @@ function mergeGmailIntoNotion(notionApps, gmailApps) {
 
 // Fetch the most recent job-related email date for each app (lightweight — metadata only)
 async function enrichEmailDates(apps, access) {
-  const TERMINAL = new Set(['Rejected', 'Turned Down']);
-  // Companies with at least one active (non-terminal) entry — used to protect old rejected
-  // entries from getting overwritten by a newer email about a fresh application to the same company
-  const hasActiveEntry = new Set(
-    apps.filter(a => !TERMINAL.has(a.stage)).map(a => a.company.toLowerCase())
-  );
+  // For companies with multiple entries, only enrich the most-active one (lowest stage rank).
+  // This prevents a new email about one application from contaminating the date of another.
+  const primaryIdByCompany = new Map();
+  for (const app of apps) {
+    const key = app.company.toLowerCase();
+    const existing = primaryIdByCompany.get(key);
+    const rank = TRACKER_STAGE_RANK[app.stage] ?? 99;
+    const existingRank = existing ? (TRACKER_STAGE_RANK[existing.stage] ?? 99) : 999;
+    if (rank < existingRank) primaryIdByCompany.set(key, app);
+  }
+  const primaryIds = new Set([...primaryIdByCompany.values()].map(a => a.notionPageId));
+
   const CONCURRENCY = 20;
   async function fetchDate(app) {
-    // Don't let a new email about a fresh application update an old rejected entry's date
-    if (TERMINAL.has(app.stage) && hasActiveEntry.has(app.company.toLowerCase())) return;
+    if (!primaryIds.has(app.notionPageId)) return;
     try {
       const searchTerm = app.company
         .replace(/\b(careers?|jobs?|inc\.?|ltd\.?|corp\.?|llc\.?|co\.?|team|hr|recruiting|talent|hiring)\b/gi, '')
