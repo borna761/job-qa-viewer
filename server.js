@@ -681,6 +681,19 @@ function roleBodyKeywords(role) {
 // Returns false when the email's text+subject contains SOME but not ALL role keywords,
 // indicating it belongs to a different role at the same company.
 // Emails with zero keyword matches are generic (calendar invite, etc.) and pass through.
+const GMAIL_EXCLUDE = '-from:jobalerts-noreply@linkedin.com -from:hit-noreply@linkedin.com -from:inmail-hit-noreply@linkedin.com -from:notifications-noreply@linkedin.com -from:indeed.com -from:glassdoor.com -from:ziprecruiter.com -from:monster.com -from:careerbuilder.com -from:jobgether.com';
+
+// Build a Gmail search query for job-related emails at a company/role.
+// When a role term is present the query is tightly anchored and needs no keyword clause;
+// company-only searches add a keyword clause to cut noise from job digests etc.
+function buildJobEmailQuery(companyTerm, roleTerm) {
+  const roleClause = roleTerm ? ` "${roleTerm}"` : '';
+  const keywordClause = roleTerm
+    ? ''
+    : ' (application OR interview OR offer OR recruiter OR hiring OR "thank you for applying" OR "next steps")';
+  return `subject:"${companyTerm}"${roleClause}${keywordClause} ${GMAIL_EXCLUDE} newer_than:730d`;
+}
+
 function emailMatchesRole(text, keywords) {
   if (!keywords.length) return true;
   const lower = text.toLowerCase();
@@ -702,7 +715,6 @@ async function enrichEmailDates(apps, access) {
   }
   const primaryIds = new Set([...primaryIdByCompany.values()].map(a => a.notionPageId));
 
-  const EXCLUDE = '-from:jobalerts-noreply@linkedin.com -from:hit-noreply@linkedin.com -from:inmail-hit-noreply@linkedin.com -from:notifications-noreply@linkedin.com -from:indeed.com -from:glassdoor.com -from:ziprecruiter.com -from:monster.com -from:careerbuilder.com -from:jobgether.com';
   const CONCURRENCY = 20;
 
   async function fetchDate(app) {
@@ -729,7 +741,7 @@ async function enrichEmailDates(apps, access) {
     try {
       // 1. Role-specific search — works for any entry regardless of primary status
       if (roleTerm) {
-        const q = `subject:"${companyTerm}" "${roleTerm}" ${EXCLUDE} newer_than:730d`;
+        const q = buildJobEmailQuery(companyTerm, roleTerm);
         const list = await gmailApiFetch(`users/me/threads?q=${encodeURIComponent(q)}&maxResults=1`, access);
         if (list.threads?.length) {
           const thread = await gmailApiFetch(
@@ -745,7 +757,7 @@ async function enrichEmailDates(apps, access) {
 
       // 2. Company-only fallback — restricted to the most-active entry per company
       if (!primaryIds.has(app.notionPageId)) return;
-      const q = `subject:"${companyTerm}" ${EXCLUDE} newer_than:730d`;
+      const q = buildJobEmailQuery(companyTerm, null);
       const list = await gmailApiFetch(`users/me/threads?q=${encodeURIComponent(q)}&maxResults=1`, access);
       if (!list.threads?.length) return;
       const thread = await gmailApiFetch(
@@ -1285,16 +1297,8 @@ app.get('/api/tracker/detail', async (req, res) => {
         .replace(/\s*\.\s*$/, '')
         .replace(/\s+/g, ' ').trim() || company;
       const roleTerm = roleSearchTerm(role);
-      const roleClause = roleTerm ? ` "${roleTerm}"` : '';
-      // When we have a role term the query is already tightly anchored — skip the keyword
-      // clause so rejection emails (which often lack words like "application" or "interview")
-      // are still included. The keyword clause is only needed for company-only searches to
-      // cut noise from LinkedIn digests etc.
-      const keywordClause = roleTerm
-        ? ''
-        : ' (application OR interview OR offer OR recruiter OR hiring OR "thank you for applying" OR "next steps")';
       // Use subject: so a company name appearing only in an email body (e.g. LinkedIn "top jobs" sections) doesn't pollute another company's panel
-      const q = `subject:"${companyTerm}"${roleClause}${keywordClause} -from:jobalerts-noreply@linkedin.com -from:hit-noreply@linkedin.com -from:inmail-hit-noreply@linkedin.com -from:notifications-noreply@linkedin.com -from:indeed.com -from:glassdoor.com -from:ziprecruiter.com -from:monster.com -from:careerbuilder.com -from:jobgether.com newer_than:730d`;
+      const q = buildJobEmailQuery(companyTerm, roleTerm);
       const list = await gmailApiFetch(
         `users/me/threads?q=${encodeURIComponent(q)}&maxResults=50`, access);
       await Promise.all((list.threads || []).map(async ({ id }) => {
