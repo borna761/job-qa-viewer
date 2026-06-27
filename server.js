@@ -1286,8 +1286,15 @@ app.get('/api/tracker/detail', async (req, res) => {
         .replace(/\s+/g, ' ').trim() || company;
       const roleTerm = roleSearchTerm(role);
       const roleClause = roleTerm ? ` "${roleTerm}"` : '';
+      // When we have a role term the query is already tightly anchored — skip the keyword
+      // clause so rejection emails (which often lack words like "application" or "interview")
+      // are still included. The keyword clause is only needed for company-only searches to
+      // cut noise from LinkedIn digests etc.
+      const keywordClause = roleTerm
+        ? ''
+        : ' (application OR interview OR offer OR recruiter OR hiring OR "thank you for applying" OR "next steps")';
       // Use subject: so a company name appearing only in an email body (e.g. LinkedIn "top jobs" sections) doesn't pollute another company's panel
-      const q = `subject:"${companyTerm}"${roleClause} (application OR interview OR offer OR recruiter OR hiring OR "thank you for applying" OR "next steps") -from:jobalerts-noreply@linkedin.com -from:hit-noreply@linkedin.com -from:inmail-hit-noreply@linkedin.com -from:notifications-noreply@linkedin.com -from:indeed.com -from:glassdoor.com -from:ziprecruiter.com -from:monster.com -from:careerbuilder.com -from:jobgether.com newer_than:730d`;
+      const q = `subject:"${companyTerm}"${roleClause}${keywordClause} -from:jobalerts-noreply@linkedin.com -from:hit-noreply@linkedin.com -from:inmail-hit-noreply@linkedin.com -from:notifications-noreply@linkedin.com -from:indeed.com -from:glassdoor.com -from:ziprecruiter.com -from:monster.com -from:careerbuilder.com -from:jobgether.com newer_than:730d`;
       const list = await gmailApiFetch(
         `users/me/threads?q=${encodeURIComponent(q)}&maxResults=50`, access);
       await Promise.all((list.threads || []).map(async ({ id }) => {
