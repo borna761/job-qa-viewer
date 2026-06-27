@@ -423,7 +423,7 @@ async function fetchAllNotionBlocks(pageId) {
 const NOTION_SECTION_MAP = {
   active:      'Applied',
   notapplied:  'Interested',
-  interviewed: 'Interviews',
+  interviews:  'Interviews',
   turneddown:  'Turned Down',
   stale:       'Stale',
   inactive:    'Rejected',
