@@ -3,7 +3,7 @@
   "name": "Job Tracker",
   "version": "1.0",
   "description": "Shows whether you've already applied to a job posting",
-  "permissions": ["tabs", "alarms", "storage"],
+  "permissions": ["tabs", "alarms", "storage", "scripting", "activeTab"],
   "host_permissions": ["http://localhost:3456/*"],
   "background": {
     "service_worker": "background.js"
