@@ -223,6 +223,7 @@ function openDetail(app) {
 
   const params = new URLSearchParams({ company: app.company });
   if (app.notionPageId) params.set('notionPageId', app.notionPageId);
+  if (app.role) params.set('role', app.role);
 
   fetch(`/api/tracker/detail?${params}`)
     .then(r => r.json())

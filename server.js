@@ -1236,21 +1236,24 @@ app.get('/api/tracker/detail', async (req, res) => {
     }
   }
 
-  // Gmail threads mentioning this company
+  // Gmail threads mentioning this company (and role if provided)
   if (company) {
     try {
       const access = await getGmailAccessToken();
       const profile = await gmailApiFetch('users/me/profile', access);
       const myEmail = (profile.emailAddress || '').toLowerCase();
 
-      const searchTerm = company
+      const { role } = req.query;
+      const companyTerm = company
         .replace(/"/g, '')
         .replace(/\b(careers?|jobs?|inc\.?|ltd\.?|corp\.?|llc\.?|co\.?|team|hr|recruiting|talent|hiring)\b/gi, '')
         .replace(/[&,;|]+/g, ' ')
         .replace(/\s*\.\s*$/, '')
         .replace(/\s+/g, ' ').trim() || company;
+      const roleTerm = roleSearchTerm(role);
+      const roleClause = roleTerm ? ` "${roleTerm}"` : '';
       // Use subject: so a company name appearing only in an email body (e.g. LinkedIn "top jobs" sections) doesn't pollute another company's panel
-      const q = `subject:"${searchTerm}" (application OR interview OR offer OR recruiter OR hiring OR "thank you for applying" OR "next steps") -from:jobalerts-noreply@linkedin.com -from:hit-noreply@linkedin.com -from:inmail-hit-noreply@linkedin.com -from:notifications-noreply@linkedin.com -from:indeed.com -from:glassdoor.com -from:ziprecruiter.com -from:monster.com -from:careerbuilder.com -from:jobgether.com newer_than:730d`;
+      const q = `subject:"${companyTerm}"${roleClause} (application OR interview OR offer OR recruiter OR hiring OR "thank you for applying" OR "next steps") -from:jobalerts-noreply@linkedin.com -from:hit-noreply@linkedin.com -from:inmail-hit-noreply@linkedin.com -from:notifications-noreply@linkedin.com -from:indeed.com -from:glassdoor.com -from:ziprecruiter.com -from:monster.com -from:careerbuilder.com -from:jobgether.com newer_than:730d`;
       const list = await gmailApiFetch(
         `users/me/threads?q=${encodeURIComponent(q)}&maxResults=50`, access);
       await Promise.all((list.threads || []).map(async ({ id }) => {
