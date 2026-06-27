@@ -354,8 +354,10 @@ mark { background: #fef08a; border-radius: 2px; padding: 0 1px; }
 .stat-chip span { font-size: 0.66rem; font-weight: 500; color: #9ca3af; margin-top: 4px; text-transform: uppercase; letter-spacing: 0.05em; }
 .stat-interviews { background: #ede9fe; border-color: #c4b5fd; color: #5b21b6; }
 .stat-interviews span { color: #8b5cf6; }
-.stat-awaiting { background: #fef9c3; border-color: #fde047; color: #854d0e; }
-.stat-awaiting span { color: #ca8a04; }
+.stat-awaiting { background: #dbeafe; border-color: #93c5fd; color: #1d4ed8; }
+.stat-awaiting span { color: #3b82f6; }
+.stat-stale { background: #f3f4f6; border-color: #d1d5db; color: #6b7280; }
+.stat-stale span { color: #9ca3af; }
 .stat-turneddown { background: #fff7ed; border-color: #fed7aa; color: #c2410c; }
 .stat-turneddown span { color: #ea580c; }
 .stat-rejected { background: #fee2e2; border-color: #fca5a5; color: #b91c1c; }
