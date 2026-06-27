@@ -683,6 +683,10 @@ async function enrichEmailDates(apps, access) {
   const CONCURRENCY = 20;
 
   async function fetchDate(app) {
+    // Don't update dates for terminal-stage entries — they'd pick up emails
+    // from newer applications at the same company with similar role terms.
+    if (app.stage === 'Rejected' || app.stage === 'Turned Down') return;
+
     const companyTerm = app.company
       .replace(/\b(careers?|jobs?|inc\.?|ltd\.?|corp\.?|llc\.?|co\.?|team|hr|recruiting|talent|hiring)\b/gi, '')
       .replace(/\s+/g, ' ').trim() || app.company;
