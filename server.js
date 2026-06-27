@@ -413,51 +413,54 @@ async function fetchAllNotionBlocks(pageId) {
   return blocks;
 }
 
+// Maps Notion stage-page titles → tracker stage names
 const NOTION_SECTION_MAP = {
-  interviewed: 'Interviews',
   active:      'Applied',
-  stale:       'On Hold',
-  inactive:    'Rejected',
+  notapplied:  'Interested',
+  interviewed: 'Interviews',
   turneddown:  'Turned Down',
-  // 'dontapply' and 'notapplied' intentionally absent → null → skipped
+  stale:       'Stale',
+  inactive:    'Rejected',
+  // dontapply: intentionally absent → skipped
 };
 
-function parseNotionBlocks(blocks) {
+function parseTitleToApp(block, stage) {
+  const title      = block.child_page?.title || '';
+  const lastUpdate = block.created_time?.split('T')[0] || null;
+  // Title format: "[🔗 link] — Role | Company"
+  const body    = title.replace(/^\[.*?\]\s*[—–-]\s*/, '');
+  const pipeIdx = body.indexOf(' | ');
+  if (pipeIdx !== -1) {
+    const role    = body.slice(0, pipeIdx).trim();
+    const company = body.slice(pipeIdx + 3).trim();
+    return { company, role: role || null, stage, lastUpdate, source: 'notion', notionPageId: block.id };
+  }
+  const company = body.trim();
+  return company ? { company, role: null, stage, lastUpdate, source: 'notion', notionPageId: block.id } : null;
+}
+
+async function loadNotionApps() {
+  const topBlocks  = await fetchAllNotionBlocks(NOTION_PAGE_ID);
+  const stagePages = topBlocks.filter(b => {
+    if (b.type !== 'child_page') return false;
+    const key = b.child_page.title.toLowerCase().replace(/[^a-z]/g, '');
+    return !!NOTION_SECTION_MAP[key];
+  });
+
+  // Fetch all stage pages in parallel
+  const stageResults = await Promise.all(stagePages.map(async sp => {
+    const key   = sp.child_page.title.toLowerCase().replace(/[^a-z]/g, '');
+    const stage = NOTION_SECTION_MAP[key];
+    const children = await fetchAllNotionBlocks(sp.id);
+    return { stage, children };
+  }));
+
   const apps = [];
-  let currentStage = null;
-  for (const block of blocks) {
-    const type    = block.type;
-    const content = block[type];
-    if (!content) continue;
-
-    // Section headers are plain paragraph blocks
-    if (type === 'paragraph') {
-      const text = (content.rich_text || []).map(rt => rt.plain_text ?? '').join('').trim();
-      if (text) {
-        const key = text.toLowerCase().replace(/[^a-z]/g, '');
-        currentStage = NOTION_SECTION_MAP[key] ?? null;
-      }
-      continue;
-    }
-
-    // Each company is a child_page whose title is "[🔗 link] — Role | Company"
-    if (type === 'child_page') {
-      if (currentStage === null) continue;
-      const title = content.title || '';
-      const lastUpdate = block.created_time
-        ? block.created_time.split('T')[0]
-        : null;
-      // Extract company (after last |) and role (between — and |)
-      const pipeMatch = title.match(/\|\s*(.+)$/);
-      if (pipeMatch) {
-        const company = pipeMatch[1].trim();
-        const roleRaw = title.replace(/^\[.*?\]\s*[—–-]\s*/, '').replace(/\s*\|.*$/, '').trim();
-        apps.push({ company, role: roleRaw || null, stage: currentStage, lastUpdate, source: 'notion', notionPageId: block.id });
-      } else {
-        const company = title.replace(/^\[.*?\]\s*[—–-]\s*/, '').trim();
-        if (company) apps.push({ company, role: null, stage: currentStage, lastUpdate, source: 'notion', notionPageId: block.id });
-      }
-      continue;
+  for (const { stage, children } of stageResults) {
+    for (const child of children) {
+      if (child.type !== 'child_page') continue;
+      const app = parseTitleToApp(child, stage);
+      if (app) apps.push(app);
     }
   }
   return apps;
@@ -666,19 +669,16 @@ let urlMapCacheTime = 0;
 const URL_MAP_TTL = 10 * 60 * 1000;
 
 async function buildUrlMap() {
-  const blocks = await fetchAllNotionBlocks(NOTION_PAGE_ID);
-  const apps = parseNotionBlocks(blocks);
+  const apps = await loadNotionApps();
   const CONCURRENCY = 20;
   const entries = [];
   async function fetchOne(app) {
     if (!app.notionPageId) return;
     try {
-      const page = await fetch(`https://api.notion.com/v1/pages/${app.notionPageId}`, {
-        headers: { 'Authorization': `Bearer ${process.env.NOTION_TOKEN}`, 'Notion-Version': '2022-06-28' },
-      }).then(r => r.json());
+      const page = await notionFetch(`pages/${app.notionPageId}`);
       const titleSpans = page.properties?.title?.title || [];
       for (const span of titleSpans) {
-        const url = span.href || (span.plain_text?.match(/https?:\/\/\S+/)?.[0]);
+        const url = span.href || span.text?.link?.url;
         if (url) { entries.push({ url, company: app.company, stage: app.stage }); break; }
       }
     } catch { /* skip */ }
@@ -739,8 +739,7 @@ app.get('/api/tracker/auth/callback', async (req, res) => {
 app.get('/api/tracker/load', async (req, res) => {
   const result = { applications: [], setup: { notion: 'ok', gmail: 'ok' } };
   try {
-    const blocks = await fetchAllNotionBlocks(NOTION_PAGE_ID);
-    result.applications = parseNotionBlocks(blocks);
+    result.applications = await loadNotionApps();
   } catch (e) {
     result.setup.notion = e.code || 'error';
   }
@@ -758,8 +757,7 @@ app.get('/api/tracker/load', async (req, res) => {
 app.get('/api/tracker/refresh', async (req, res) => {
   const result = { applications: [], setup: { notion: 'ok', gmail: 'ok' } };
   try {
-    const blocks = await fetchAllNotionBlocks(NOTION_PAGE_ID);
-    result.applications = parseNotionBlocks(blocks);
+    result.applications = await loadNotionApps();
   } catch (e) {
     result.setup.notion = e.code || 'error';
   }

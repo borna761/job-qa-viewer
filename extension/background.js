@@ -2,13 +2,12 @@ const API = 'http://localhost:3456/api/tracker/urls';
 const REFRESH_MINUTES = 5;
 
 const STAGE_COLOR = {
-  'Applied':      '#1d4ed8',
-  'Phone Screen': '#d97706',
-  'On Hold':      '#9ca3af',
-  'Interviews':   '#7c3aed',
-  'Offer':        '#16a34a',
-  'Rejected':     '#dc2626',
-  'Turned Down':  '#ea580c',
+  'Interested':  '#0891b2',
+  'Applied':     '#1d4ed8',
+  'Interviews':  '#7c3aed',
+  'Stale':       '#9ca3af',
+  'Turned Down': '#ea580c',
+  'Rejected':    '#dc2626',
 };
 
 // In-memory map rebuilt from storage on each service-worker wake
