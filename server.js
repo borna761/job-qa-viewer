@@ -450,7 +450,11 @@ async function loadNotionApps() {
   const stagePages = topBlocks.filter(b => {
     if (b.type !== 'child_page' || b.archived || b.in_trash) return false;
     const key = b.child_page.title.toLowerCase().replace(/[^a-z]/g, '');
-    return !!NOTION_SECTION_MAP[key];
+    if (!NOTION_SECTION_MAP[key]) {
+      console.warn(`[tracker] Unknown Notion section ignored: "${b.child_page.title}" (key: "${key}") — add it to NOTION_SECTION_MAP if it should be tracked`);
+      return false;
+    }
+    return true;
   });
 
   // Fetch all stage pages in parallel
@@ -610,6 +614,19 @@ const TRACKER_STAGE_RANK = Object.fromEntries(
   ['Interviews', 'Applied', 'Interested', 'Stale', 'Turned Down', 'Rejected'].map((s, i) => [s, i])
 );
 
+// Returns a Map<companyKey, app> of the most active (lowest TRACKER_STAGE_RANK) entry per company.
+function buildPrimaryByCompany(apps) {
+  const map = new Map();
+  for (const a of apps) {
+    const key = a.company.toLowerCase();
+    const existing = map.get(key);
+    const rank = TRACKER_STAGE_RANK[a.stage] ?? 99;
+    const existingRank = existing ? (TRACKER_STAGE_RANK[existing.stage] ?? 99) : 999;
+    if (rank < existingRank) map.set(key, a);
+  }
+  return map;
+}
+
 function mergeGmailIntoNotion(notionApps, gmailApps) {
   // Keep every Notion entry (including duplicates with the same company but different roles)
   const apps = notionApps.map(a => ({ ...a }));
@@ -620,17 +637,8 @@ function mergeGmailIntoNotion(notionApps, gmailApps) {
     if (!byCompany.has(key)) byCompany.set(key, []);
     byCompany.get(key).push(a);
   }
-  // Determine the single primary (most active) entry per company for stage updates.
-  // When multiple roles exist at the same company, we can't tell which Gmail email
-  // belongs to which role, so only the primary entry gets its stage updated.
-  const primaryByCompany = new Map();
-  for (const a of apps) {
-    const key = a.company.toLowerCase();
-    const existing = primaryByCompany.get(key);
-    const rank = TRACKER_STAGE_RANK[a.stage] ?? 99;
-    const existingRank = existing ? (TRACKER_STAGE_RANK[existing.stage] ?? 99) : 999;
-    if (rank < existingRank) primaryByCompany.set(key, a);
-  }
+  // When multiple roles exist at the same company, only the primary entry gets Gmail updates.
+  const primaryByCompany = buildPrimaryByCompany(apps);
   for (const g of gmailApps) {
     if (!g.company) continue;
     const matches = byCompany.get(g.company.toLowerCase()) || [];
@@ -646,9 +654,6 @@ function mergeGmailIntoNotion(notionApps, gmailApps) {
   return apps;
 }
 
-// Extract distinctive terms from a role title for role-specific email search.
-// Strips generic title words so "Senior Product Manager – Data Platform" → "Data Platform".
-// Returns null when nothing distinctive remains (< 2 words), signalling fallback to company-only.
 // Strips generic job title words for Gmail search term extraction.
 // ROLE_STRIP includes level words (senior/junior/lead) so both "Senior PM - Data Platform"
 // and "PM - Data Platform" reduce to "Data Platform" for a shared search query.
@@ -720,15 +725,9 @@ function emailMatchesRole(text, keywords) {
 async function enrichEmailDates(apps, access) {
   // For entries where we can't extract a distinctive role term, fall back to a company-only
   // search — but only for the most-active entry per company to avoid cross-contamination.
-  const primaryIdByCompany = new Map();
-  for (const app of apps) {
-    const key = app.company.toLowerCase();
-    const existing = primaryIdByCompany.get(key);
-    const rank = TRACKER_STAGE_RANK[app.stage] ?? 99;
-    const existingRank = existing ? (TRACKER_STAGE_RANK[existing.stage] ?? 99) : 999;
-    if (rank < existingRank) primaryIdByCompany.set(key, app);
-  }
-  const primaryIds = new Set([...primaryIdByCompany.values()].map(a => a.notionPageId));
+  const primaryIds = new Set(
+    [...buildPrimaryByCompany(apps).values()].map(a => a.notionPageId)
+  );
 
   const CONCURRENCY = 20;
 
@@ -777,7 +776,7 @@ async function enrichEmailDates(apps, access) {
         `users/me/threads/${list.threads[0].id}?format=metadata&metadataHeaders=Date`, access);
       const last = (thread.messages || []).at(-1);
       if (!last?.internalDate) return;
-      const date = new Date(+last.internalDate).toISOString().split('T')[0];
+      const date = new Date(+last.internalDate).toISOString();
       if (!app.lastUpdate || date > app.lastUpdate) app.lastUpdate = date;
     } catch { /* skip */ }
   }
