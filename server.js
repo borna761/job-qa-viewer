@@ -383,7 +383,7 @@ app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 
 // ---- Tracker (Notion + Gmail) ----
 
-const NOTION_PAGE_ID   = '1e01e1c6-dd57-8023-b133-dd0875406fca';
+const NOTION_PAGE_ID   = process.env.NOTION_PAGE_ID;
 const GMAIL_TOKEN_FILE = path.join(__dirname, 'gmail-token.json');
 const GMAIL_REDIRECT   = `http://localhost:${PORT}/api/tracker/auth/callback`;
 const GMAIL_QUERY_FULL = 'subject:(application OR interview OR offer OR recruiter OR hiring) newer_than:180d';
