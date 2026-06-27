@@ -432,7 +432,7 @@ const NOTION_SECTION_MAP = {
 
 function parseTitleToApp(block, stage) {
   const title      = block.child_page?.title || '';
-  const lastUpdate = block.last_edited_time || null;
+  const lastUpdate = block.created_time || null;
   // Title format: "[🔗 link] — Role | Company"
   const body    = title.replace(/^\[.*?\]\s*[—–-]\s*/, '');
   const pipeIdx = body.indexOf(' | ');
