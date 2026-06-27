@@ -706,9 +706,19 @@ async function enrichEmailDates(apps, access) {
   const CONCURRENCY = 20;
 
   async function fetchDate(app) {
-    // Don't update dates for terminal-stage entries — they'd pick up emails
-    // from newer applications at the same company with similar role terms.
-    if (app.stage === 'Rejected' || app.stage === 'Turned Down') return;
+    // For terminal-stage entries, skip only when another active entry at the same company
+    // shares the same role search term — that means emails can't be attributed correctly.
+    if (app.stage === 'Rejected' || app.stage === 'Turned Down') {
+      const thisRoleTerm = roleSearchTerm(app.role);
+      if (!thisRoleTerm) return;
+      const collision = apps.some(a =>
+        a !== app &&
+        a.company.toLowerCase() === app.company.toLowerCase() &&
+        a.stage !== 'Rejected' && a.stage !== 'Turned Down' &&
+        roleSearchTerm(a.role) === thisRoleTerm
+      );
+      if (collision) return;
+    }
 
     const companyTerm = app.company
       .replace(/\b(careers?|jobs?|inc\.?|ltd\.?|corp\.?|llc\.?|co\.?|team|hr|recruiting|talent|hiring)\b/gi, '')
