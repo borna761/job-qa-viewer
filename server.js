@@ -692,7 +692,7 @@ function cleanCompanyTerm(company) {
 // Returns false when the email's text+subject contains SOME but not ALL role keywords,
 // indicating it belongs to a different role at the same company.
 // Emails with zero keyword matches are generic (calendar invite, etc.) and pass through.
-const GMAIL_EXCLUDE = '-from:jobalerts-noreply@linkedin.com -from:hit-noreply@linkedin.com -from:inmail-hit-noreply@linkedin.com -from:notifications-noreply@linkedin.com -from:indeed.com -from:glassdoor.com -from:ziprecruiter.com -from:monster.com -from:careerbuilder.com -from:jobgether.com';
+const GMAIL_EXCLUDE = '-from:jobalerts-noreply@linkedin.com -from:hit-noreply@linkedin.com -from:notifications-noreply@linkedin.com -from:indeed.com -from:glassdoor.com -from:ziprecruiter.com -from:monster.com -from:careerbuilder.com -from:jobgether.com';
 
 // Build a Gmail search query for job-related emails at a company/role.
 // When a role term is present the query is tightly anchored and needs no keyword clause;
