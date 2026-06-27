@@ -635,15 +635,13 @@ function mergeGmailIntoNotion(notionApps, gmailApps) {
     if (!g.company) continue;
     const matches = byCompany.get(g.company.toLowerCase()) || [];
     const primary = primaryByCompany.get(g.company.toLowerCase());
-    for (const app of matches) {
-      // Only upgrade stage on the primary entry — avoids bleeding a rejection email
-      // from one role into a separate role at the same company.
-      if (app === primary && (TRACKER_STAGE_RANK[g.stage] ?? -1) > (TRACKER_STAGE_RANK[app.stage] ?? -1))
-        app.stage = g.stage;
-      // Always take the most recent email date for all entries
-      if (g.lastUpdate && (!app.lastUpdate || g.lastUpdate > app.lastUpdate))
-        app.lastUpdate = g.lastUpdate;
-    }
+    // Only the primary entry gets stage and date updates from Gmail — secondary entries
+    // (other roles at the same company) keep their Notion created_time as-is.
+    if (!primary) continue;
+    if ((TRACKER_STAGE_RANK[g.stage] ?? -1) > (TRACKER_STAGE_RANK[primary.stage] ?? -1))
+      primary.stage = g.stage;
+    if (g.lastUpdate && (!primary.lastUpdate || g.lastUpdate > primary.lastUpdate))
+      primary.lastUpdate = g.lastUpdate;
   }
   return apps;
 }
