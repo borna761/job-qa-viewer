@@ -698,7 +698,11 @@ const GMAIL_EXCLUDE = '-from:jobalerts-noreply@linkedin.com -from:hit-noreply@li
 // When a role term is present the query is tightly anchored and needs no keyword clause;
 // company-only searches add a keyword clause to cut noise from job digests etc.
 function buildJobEmailQuery(companyTerm, roleTerm) {
-  const roleClause = roleTerm ? ` "${roleTerm}"` : '';
+  // Quote each word individually (not as a phrase) so "Technical Search" from
+  // "Technical Product Manager, Search" matches even though the words aren't adjacent.
+  const roleClause = roleTerm
+    ? ' ' + roleTerm.split(' ').map(w => `"${w}"`).join(' ')
+    : '';
   const keywordClause = roleTerm
     ? ''
     : ' (application OR interview OR offer OR recruiter OR hiring OR "thank you for applying" OR "next steps")';
