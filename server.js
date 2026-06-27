@@ -665,6 +665,31 @@ function roleSearchTerm(role) {
   return words.length >= 2 ? words.slice(0, 3).join(' ') : null;
 }
 
+// Like ROLE_STRIP but keeps level words (senior/junior/lead/principal/staff/associate)
+// so "Senior PM - Data Platform" and "PM - Data Platform" stay distinguishable for body matching.
+const BODY_ROLE_STRIP = /\b(product|manager|owner|analyst|pm|po|tpm|tpo|cpo|vp|head|director|remote|canada|canadian|multiple|levels|available|contract|interim|part.?time|full.?time)\b/gi;
+
+function roleBodyKeywords(role) {
+  if (!role) return [];
+  return role
+    .replace(/\(.*?\)/g, ' ')
+    .replace(BODY_ROLE_STRIP, ' ')
+    .replace(/[-–—|,\/&+]/g, ' ')
+    .split(/\s+/)
+    .map(w => w.trim().toLowerCase())
+    .filter(w => w.length > 2);
+}
+
+// Returns false when the email's text+subject contains SOME but not ALL role keywords,
+// indicating it belongs to a different role at the same company.
+// Emails with zero keyword matches are generic (calendar invite, etc.) and pass through.
+function emailMatchesRole(text, keywords) {
+  if (!keywords.length) return true;
+  const lower = text.toLowerCase();
+  const hits = keywords.filter(w => lower.includes(w)).length;
+  return hits === 0 || hits === keywords.length;
+}
+
 // Fetch the most recent job-related email date for each app (lightweight — metadata only)
 async function enrichEmailDates(apps, access) {
   // For entries where we can't extract a distinctive role term, fall back to a company-only
@@ -1244,6 +1269,7 @@ app.get('/api/tracker/detail', async (req, res) => {
       const myEmail = (profile.emailAddress || '').toLowerCase();
 
       const { role } = req.query;
+      const roleKeywords = roleBodyKeywords(role);
       const companyTerm = company
         .replace(/"/g, '')
         .replace(/\b(careers?|jobs?|inc\.?|ltd\.?|corp\.?|llc\.?|co\.?|team|hr|recruiting|talent|hiring)\b/gi, '')
@@ -1265,6 +1291,14 @@ app.get('/api/tracker/detail', async (req, res) => {
             const from = hdrs['From'] || '';
             const subj = hdrs['Subject'] || '(no subject)';
             const bodyResult = extractEmailBody(msg.payload);
+            // Post-filter: if the body mentions some but not all of this role's keywords,
+            // it belongs to a different role at the same company — skip it.
+            const bodyText = bodyResult
+              ? (bodyResult.html
+                  ? bodyResult.content.replace(/<[^>]+>/g, ' ')
+                  : bodyResult.content)
+              : (msg.snippet || '');
+            if (!emailMatchesRole(subj + ' ' + bodyText, roleKeywords)) continue;
             const isCalendar = /calendar-notification@google\.com|calendly\.com|@calendly\b/i.test(from) ||
               /\.ics|calendar invite|interview.*scheduled|scheduled.*interview|^appointment booked|^invitation from (an? )?unknown sender|^invitation for .*(call|meeting|interview)|^reminder:.*(call|meeting|interview|@)/i.test(subj);
             result.emails.push({
