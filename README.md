@@ -2,15 +2,21 @@
 
 A local web app for managing your job search: browse and edit your interview Q&A answers, track applications through Notion, and get a Chrome extension that shows whether you've already applied to any job posting you're browsing.
 
-![Job Q&A Viewer](https://raw.githubusercontent.com/borna761/job-qa-viewer/main/public/assets/screenshot.png)
-
 ## What it does
 
 **Q&A tab** — Keep your interview answers in plain `.txt` files. Browse by category, filter by company, search, drag to reorder, and edit everything in the browser.
 
+![Q&A tab](https://raw.githubusercontent.com/borna761/job-qa-viewer/main/public/assets/screenshot-qa.png)
+
 **Tracker tab** — See all your job applications pulled from a Notion workspace, enriched with matching Gmail threads (applied confirmation, rejections, interview invites). Click any row for a detail panel showing the job description you saved and recent emails.
 
+![Tracker tab](https://raw.githubusercontent.com/borna761/job-qa-viewer/main/public/assets/screenshot-tracker.png)
+
 **Chrome extension** — While browsing job postings, a coloured dot on the extension icon tells you the stage at a glance (cyan = interested, blue = applied, purple = interviewing). Click to save a new job directly to Notion, or view its current status and recent emails.
+
+| Save a new job | View tracked job |
+|---|---|
+| ![Extension save form](https://raw.githubusercontent.com/borna761/job-qa-viewer/main/public/assets/screenshot-popup-save.png) | ![Extension tracked view](https://raw.githubusercontent.com/borna761/job-qa-viewer/main/public/assets/screenshot-popup-tracked.png) |
 
 ## Requirements
 
