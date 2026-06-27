@@ -993,7 +993,7 @@ function plainTextToNotionBlocks(text) {
 }
 
 app.post('/api/tracker/save', async (req, res) => {
-  const { url, role, company, stage } = req.body || {};
+  const { url, role, company, stage, pageHtml } = req.body || {};
   if (!url || !company || !stage)
     return res.status(400).json({ error: 'url, company, and stage are required' });
   if (!process.env.NOTION_TOKEN)
@@ -1010,45 +1010,40 @@ app.post('/api/tracker/save', async (req, res) => {
     const linkText = '[🔗 link]';
     const bodyText = role ? ` — ${role} | ${company}` : ` — ${company}`;
 
-    // Fetch job description from the posting URL
+    // Extract job description content for Notion.
+    // Prefer HTML sent directly by the extension (authenticated, fully rendered DOM).
+    // Fall back to server-side fetch for non-SPA pages or when scripting is unavailable.
     let children = [];
     try {
-      const html = await fetch(url, {
-        headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
-        signal: AbortSignal.timeout(8000),
-      }).then(r => r.text());
+      if (pageHtml) {
+        children = htmlToNotionBlocks(pageHtml);
+      } else {
+        const html = await fetch(url, {
+          headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
+          signal: AbortSignal.timeout(8000),
+        }).then(r => r.text());
 
-      let ldPlainText = '';
-      const ldMatch = html.match(/<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/i);
-      if (ldMatch) {
-        try {
-          const ld = JSON.parse(ldMatch[1]);
-          const posting = Array.isArray(ld)
-            ? ld.find(x => x['@type'] === 'JobPosting')
-            : ld['@type'] === 'JobPosting' ? ld : null;
-          if (posting?.description) {
-            if (/<[a-z]/i.test(posting.description)) {
-              // JSON-LD has HTML markup — use it directly
-              children = htmlToNotionBlocks(posting.description);
-            } else {
-              ldPlainText = posting.description;
+        let ldPlainText = '';
+        const ldMatch = html.match(/<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/i);
+        if (ldMatch) {
+          try {
+            const ld = JSON.parse(ldMatch[1]);
+            const posting = Array.isArray(ld)
+              ? ld.find(x => x['@type'] === 'JobPosting')
+              : ld['@type'] === 'JobPosting' ? ld : null;
+            if (posting?.description) {
+              if (/<[a-z]/i.test(posting.description)) {
+                children = htmlToNotionBlocks(posting.description);
+              } else {
+                ldPlainText = posting.description;
+              }
             }
-          }
-        } catch { /* malformed JSON-LD */ }
-      }
+          } catch { /* malformed JSON-LD */ }
+        }
 
-      // If JSON-LD gave us blocks, we're done. Otherwise try the raw page HTML
-      // (works for server-rendered pages; SPAs will yield 0 blocks here).
-      if (!children.length) {
-        const htmlBlocks = htmlToNotionBlocks(html);
-        console.log('[save] ld_plain:', !!ldPlainText, 'ld_html_blocks:', children.length, 'html_blocks:', htmlBlocks.length, 'has_main:', /<main\b/i.test(html), 'url:', url.slice(0,80));
-        children = htmlBlocks;
-      }
+        if (!children.length) children = htmlToNotionBlocks(html);
 
-      // Last resort: JSON-LD plain text — parse structure heuristically
-      if (!children.length && ldPlainText) {
-        children = plainTextToNotionBlocks(ldPlainText);
-        console.log('[save] plaintext blocks:', children.length, 'snippet:', JSON.stringify(ldPlainText.slice(0, 200)));
+        if (!children.length && ldPlainText) children = plainTextToNotionBlocks(ldPlainText);
       }
     } catch { /* fetch failed — save without description */ }
 
