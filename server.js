@@ -649,33 +649,44 @@ function mergeGmailIntoNotion(notionApps, gmailApps) {
 // Extract distinctive terms from a role title for role-specific email search.
 // Strips generic title words so "Senior Product Manager – Data Platform" → "Data Platform".
 // Returns null when nothing distinctive remains (< 2 words), signalling fallback to company-only.
-const ROLE_STRIP = /\b(senior|junior|lead|principal|staff|associate|sr|jr|product|manager|owner|analyst|pm|po|tpm|tpo|cpo|vp|head|director|remote|canada|canadian|multiple|levels|available|contract|interim|part.?time|full.?time)\b/gi;
+// Strips generic job title words for Gmail search term extraction.
+// ROLE_STRIP includes level words (senior/junior/lead) so both "Senior PM - Data Platform"
+// and "PM - Data Platform" reduce to "Data Platform" for a shared search query.
+// BODY_ROLE_STRIP keeps level words so the two roles stay distinguishable for body matching.
+const ROLE_STRIP      = /\b(senior|junior|lead|principal|staff|associate|sr|jr|product|manager|owner|analyst|pm|po|tpm|tpo|cpo|vp|head|director|remote|canada|canadian|multiple|levels|available|contract|interim|part.?time|full.?time)\b/gi;
+const BODY_ROLE_STRIP = /\b(product|manager|owner|analyst|pm|po|tpm|tpo|cpo|vp|head|director|remote|canada|canadian|multiple|levels|available|contract|interim|part.?time|full.?time)\b/gi;
 
-function roleSearchTerm(role) {
-  if (!role) return null;
-  const words = role
+function extractRoleWords(role, stripRe) {
+  if (!role) return [];
+  return role
     .replace(/\(.*?\)/g, ' ')
-    .replace(ROLE_STRIP, ' ')
+    .replace(stripRe, ' ')
     .replace(/[-–—|,\/&+]/g, ' ')
     .split(/\s+/)
     .map(w => w.trim())
     .filter(w => w.length > 2);
+}
+
+// Distinctive search term for Gmail queries — strips level words so variants of the same
+// role at a company share one query. Returns null when nothing distinctive remains.
+function roleSearchTerm(role) {
+  const words = extractRoleWords(role, ROLE_STRIP);
   return words.length >= 2 ? words.slice(0, 3).join(' ') : null;
 }
 
-// Like ROLE_STRIP but keeps level words (senior/junior/lead/principal/staff/associate)
-// so "Senior PM - Data Platform" and "PM - Data Platform" stay distinguishable for body matching.
-const BODY_ROLE_STRIP = /\b(product|manager|owner|analyst|pm|po|tpm|tpo|cpo|vp|head|director|remote|canada|canadian|multiple|levels|available|contract|interim|part.?time|full.?time)\b/gi;
-
+// Keywords for post-fetch body filtering — keeps level words (senior/junior/lead) so
+// "Senior PM - Data Platform" and "PM - Data Platform" stay distinguishable.
 function roleBodyKeywords(role) {
-  if (!role) return [];
-  return role
-    .replace(/\(.*?\)/g, ' ')
-    .replace(BODY_ROLE_STRIP, ' ')
-    .replace(/[-–—|,\/&+]/g, ' ')
-    .split(/\s+/)
-    .map(w => w.trim().toLowerCase())
-    .filter(w => w.length > 2);
+  return extractRoleWords(role, BODY_ROLE_STRIP).map(w => w.toLowerCase());
+}
+
+function cleanCompanyTerm(company) {
+  return company
+    .replace(/"/g, '')
+    .replace(/\b(careers?|jobs?|inc\.?|ltd\.?|corp\.?|llc\.?|co\.?|team|hr|recruiting|talent|hiring)\b/gi, '')
+    .replace(/[&,;|]+/g, ' ')
+    .replace(/\s*\.\s*$/, '')
+    .replace(/\s+/g, ' ').trim() || company;
 }
 
 // Returns false when the email's text+subject contains SOME but not ALL role keywords,
@@ -732,9 +743,7 @@ async function enrichEmailDates(apps, access) {
       if (collision) return;
     }
 
-    const companyTerm = app.company
-      .replace(/\b(careers?|jobs?|inc\.?|ltd\.?|corp\.?|llc\.?|co\.?|team|hr|recruiting|talent|hiring)\b/gi, '')
-      .replace(/\s+/g, ' ').trim() || app.company;
+    const companyTerm = cleanCompanyTerm(app.company);
 
     const roleTerm = roleSearchTerm(app.role);
 
@@ -1290,12 +1299,7 @@ app.get('/api/tracker/detail', async (req, res) => {
 
       const { role } = req.query;
       const roleKeywords = roleBodyKeywords(role);
-      const companyTerm = company
-        .replace(/"/g, '')
-        .replace(/\b(careers?|jobs?|inc\.?|ltd\.?|corp\.?|llc\.?|co\.?|team|hr|recruiting|talent|hiring)\b/gi, '')
-        .replace(/[&,;|]+/g, ' ')
-        .replace(/\s*\.\s*$/, '')
-        .replace(/\s+/g, ' ').trim() || company;
+      const companyTerm = cleanCompanyTerm(company);
       const roleTerm = roleSearchTerm(role);
       // Use subject: so a company name appearing only in an email body (e.g. LinkedIn "top jobs" sections) doesn't pollute another company's panel
       const q = buildJobEmailQuery(companyTerm, roleTerm);
