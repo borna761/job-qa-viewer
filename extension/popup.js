@@ -176,37 +176,89 @@ function renderSaveForm(tabUrl, { role, company }) {
       const [result] = await chrome.scripting.executeScript({
         target: { tabId: tab.id },
         func: () => {
-          const SELECTORS = [
-            // LinkedIn
-            '.jobs-description__content',
-            '.jobs-description',
-            '#job-details',
-            // Greenhouse
-            '#content .job__description',
-            '.job-post--description',
-            // Lever
-            '.posting-description',
-            // Workday
-            '[data-automation-id="jobPostingDescription"]',
-            // Ashby
-            '[class*="JobPosting"]',
-            // Generic
-            '[class*="job-description"]',
-            '[class*="jobDescription"]',
-            '[class*="description-content"]',
-          ];
-          for (const sel of SELECTORS) {
-            const el = document.querySelector(sel);
-            if (el && el.innerText.trim().length > 200) return el.innerHTML;
+          // Clone an element, strip non-content noise, return innerHTML
+          function extractClean(el) {
+            const clone = el.cloneNode(true);
+            clone.querySelectorAll(
+              'button, svg, img, input, select, textarea, script, style, ' +
+              '[aria-hidden="true"], [class*="show-more"], [class*="see-more"], ' +
+              '[class*="premium"], [class*="apply-btn"], [class*="footer"]'
+            ).forEach(n => n.remove());
+            return clone.innerHTML;
           }
-          // Fallback: largest block of text that isn't nav/header/footer
+
+          // Find a leaf element whose visible text exactly matches a pattern
+          function findByText(re) {
+            for (const el of document.querySelectorAll('h1,h2,h3,h4,h5,h6,span,div,p,strong')) {
+              const t = el.innerText?.trim();
+              if (t && t.length < 50 && re.test(t) && el.children.length === 0) return el;
+            }
+            return null;
+          }
+
+          // Walk up from el until we find an ancestor with substantial text
+          function contentParent(el, minLen = 400) {
+            let node = el.parentElement;
+            while (node && node !== document.body) {
+              if ((node.innerText?.trim().length || 0) >= minLen) return node;
+              node = node.parentElement;
+            }
+            return null;
+          }
+
+          const host = location.hostname;
+
+          // ---- LinkedIn ----
+          if (host.includes('linkedin.com')) {
+            const h = findByText(/^about the job$/i);
+            if (h) {
+              const c = contentParent(h);
+              if (c) return extractClean(c);
+            }
+            for (const sel of ['.jobs-description__content', '.jobs-description', '#job-details']) {
+              const el = document.querySelector(sel);
+              if (el && el.innerText.trim().length > 200) return extractClean(el);
+            }
+          }
+
+          // ---- Greenhouse ----
+          if (host.includes('greenhouse.io') || host.includes('boards.greenhouse')) {
+            for (const sel of ['#content .job__description', '.job-post--description', '#app_body .posting-description']) {
+              const el = document.querySelector(sel);
+              if (el && el.innerText.trim().length > 200) return extractClean(el);
+            }
+          }
+
+          // ---- Lever ----
+          if (host.includes('jobs.lever.co') || host.includes('lever.co')) {
+            const el = document.querySelector('.posting-description, .section-wrapper');
+            if (el && el.innerText.trim().length > 200) return extractClean(el);
+          }
+
+          // ---- Workday ----
+          const workday = document.querySelector('[data-automation-id="jobPostingDescription"]');
+          if (workday) return extractClean(workday);
+
+          // ---- Ashby ----
+          const ashby = document.querySelector('[class*="JobPosting_description"], [class*="jobPosting"]');
+          if (ashby) return extractClean(ashby);
+
+          // ---- Generic fallback ----
+          // Find the heading that looks like a job description title, then grab its section
+          const jobHeading = findByText(/^(about (this |the )?role|job description|responsibilities|the role)$/i);
+          if (jobHeading) {
+            const c = contentParent(jobHeading);
+            if (c) return extractClean(c);
+          }
+
+          // Last resort: largest content block that isn't nav/chrome
           let best = null, bestLen = 0;
-          for (const el of document.querySelectorAll('article, main, section, div')) {
+          for (const el of document.querySelectorAll('article, main, [role="main"], section')) {
             if (el.closest('nav, header, footer, aside')) continue;
             const len = el.innerText?.trim().length || 0;
             if (len > bestLen && len < 50000) { bestLen = len; best = el; }
           }
-          return best && bestLen > 200 ? best.innerHTML : '';
+          return best && bestLen > 200 ? extractClean(best) : '';
         },
       });
       pageHtml = result?.result || '';
