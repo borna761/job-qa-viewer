@@ -867,17 +867,50 @@ function htmlToNotionBlocks(html) {
         }
       }
     }
-    return rt.filter(r => r.text.content);
+    return rt.filter(r => r.text.content.trim());
   }
 
   function push(type, inner) {
     if (blocks.length >= 95) return;
     const rt = parseRichText(inner.replace(/<br\s*\/?>/gi, ' '));
     if (!rt.length) return;
+    const plain = rt.map(r => r.text.content).join('').trim();
+    if (plain.length < 3) return;
     blocks.push({ object: 'block', type, [type]: { rich_text: rt } });
   }
 
-  // Strip non-content elements before parsing
+  // Emit a chunk of HTML that may contain embedded sentinels for lists/headings
+  function emitChunk(chunk, defaultType = 'paragraph') {
+    // Split on embedded sentinels: \x00<idx>\x00
+    const parts = chunk.split(/\x00(\d+)\x00/);
+    for (let i = 0; i < parts.length; i++) {
+      if (i % 2 === 0) {
+        // Split text segment further on <br><br> paragraph breaks
+        for (const sub of parts[i].split(/(?:<br\s*\/?>\s*){2,}/i)) {
+          const plain = decode(sub.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ')).trim();
+          if (plain.length >= 3) push(defaultType, sub);
+        }
+      } else {
+        // Sentinel index — emit the stored segment
+        emitSegment(parseInt(parts[i]));
+      }
+    }
+  }
+
+  const segments = []; // stored structured blocks extracted in pass 1
+
+  function emitSegment(idx) {
+    const seg = segments[idx];
+    if (!seg) return;
+    if (seg.type === 'list') {
+      for (const item of seg.items) push('bulleted_list_item', item);
+    } else if (seg.type === 'heading') {
+      const type = seg.level === 1 ? 'heading_1' : seg.level === 2 ? 'heading_2' : 'heading_3';
+      push(type, seg.inner);
+    }
+  }
+
+  // Strip non-content elements
   html = html
     .replace(/<style[\s\S]*?<\/style>/gi, '')
     .replace(/<script[\s\S]*?<\/script>/gi, '')
@@ -888,26 +921,52 @@ function htmlToNotionBlocks(html) {
     .replace(/<header\b[^>]*>[\s\S]*?<\/header>/gi, '')
     .replace(/<footer\b[^>]*>[\s\S]*?<\/footer>/gi, '');
 
-  // Prefer <main> content for full-page HTML; fragments from the extension won't have <main>
+  // Prefer <main> for full-page HTML
   const mainMatch = html.match(/<main\b[^>]*>([\s\S]*?)<\/main>/i);
   if (mainMatch) html = mainMatch[1];
 
-  // Convert <br> runs to paragraph separators before block parsing
-  html = html.replace(/(<br\s*\/?>\s*){2,}/gi, '</p><p>');
+  // Pass 1: extract <ul>/<ol> list items (replace with sentinel \x00idx\x00)
+  html = html.replace(/<(?:ul|ol)\b[^>]*>([\s\S]*?)<\/(?:ul|ol)>/gi, (_, content) => {
+    const items = [...content.matchAll(/<li\b[^>]*>([\s\S]*?)<\/li\s*>/gi)].map(m => m[1]);
+    if (!items.length) return '';
+    const idx = segments.length;
+    segments.push({ type: 'list', items });
+    return `\x00${idx}\x00`;
+  });
 
-  const blockRe = /<(h[1-6]|p|li)\b[^>]*>([\s\S]*?)<\/\1\s*>/gi;
+  // Pass 2: extract headings (replace with sentinel)
+  html = html.replace(/<(h[1-6])\b[^>]*>([\s\S]*?)<\/\1\s*>/gi, (_, tag, inner) => {
+    const idx = segments.length;
+    segments.push({ type: 'heading', level: parseInt(tag[1]), inner });
+    return `\x00${idx}\x00`;
+  });
 
-  for (const m of [...html.matchAll(blockRe)]) {
-    const tag = m[1].toLowerCase();
-    const inner = m[2].replace(/<br\s*\/?>/gi, ' ');
-    // Skip blocks that are purely whitespace or trivially short noise
-    const plain = decode(inner.replace(/<[^>]+>/g, '')).trim();
-    if (plain.length < 3) continue;
-    if (tag === 'h1') push('heading_1', inner);
-    else if (tag === 'h2') push('heading_2', inner);
-    else if (/^h/.test(tag)) push('heading_3', inner);
-    else if (tag === 'li') push('bulleted_list_item', inner);
-    else push('paragraph', inner);
+  // Pass 3: process remaining HTML — split into paragraph-sized chunks
+  // <br><br>+ acts as a paragraph break; <p>...</p> is an explicit paragraph
+  const chunks = [];
+
+  // Find explicit <p> blocks and text between them (which may be <br>-delimited)
+  let rest = html;
+
+  // Replace <p>...</p> with sentinels and collect the in-between text
+  const pRe = /<p\b[^>]*>([\s\S]*?)<\/p\s*>/gi;
+  let last = 0;
+  for (const m of [...rest.matchAll(pRe)]) {
+    // Text before this <p>: split on <br><br> for implicit paragraphs
+    const before = rest.slice(last, m.index);
+    for (const seg of before.split(/(?:<br\s*\/?>\s*){2,}/i)) chunks.push({ html: seg, type: 'paragraph' });
+    // The <p> content itself
+    chunks.push({ html: m[1], type: 'paragraph' });
+    last = m.index + m[0].length;
+  }
+  // Tail after last <p>
+  const tail = rest.slice(last);
+  for (const seg of tail.split(/(?:<br\s*\/?>\s*){2,}/i)) chunks.push({ html: seg, type: 'paragraph' });
+
+  // Pass 4: emit all chunks
+  for (const { html: chunk, type } of chunks) {
+    if (blocks.length >= 95) break;
+    emitChunk(chunk, type);
   }
 
   return blocks;
