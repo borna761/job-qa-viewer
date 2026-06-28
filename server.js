@@ -437,7 +437,7 @@ function parseTitleToApp(block, stage) {
   const body    = title.replace(/^\[.*?\]\s*[—–-]\s*/, '');
   const pipeIdx = body.indexOf(' | ');
   if (pipeIdx !== -1) {
-    const role    = body.slice(0, pipeIdx).trim();
+    const role    = body.slice(0, pipeIdx).trim().replace(/^(?:job\s+)?application(?:\s+for)?\s*/i, '');
     const company = body.slice(pipeIdx + 3).trim();
     return { company, role: role || null, stage, lastUpdate, source: 'notion', notionPageId: block.id };
   }
@@ -531,6 +531,11 @@ const GENERIC_DOMAINS = new Set([
   'gmail', 'googlemail', 'yahoo', 'hotmail', 'outlook', 'icloud', 'me', 'mac',
   'linkedin', 'indeed', 'glassdoor', 'ziprecruiter', 'monster', 'careerbuilder',
 ]);
+
+function localDateStr(ms) {
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
 
 function extractCompanyFromSubject(subject) {
   const patterns = [
@@ -944,6 +949,10 @@ function htmlToNotionBlocks(html) {
   // Pass 3: process remaining HTML — split into paragraph-sized chunks
   // <br><br>+ acts as a paragraph break; <p>...</p> is an explicit paragraph
   const chunks = [];
+
+  // Normalise block-level divs to paragraphs so the <p> splitter below handles them.
+  // Runs after list/heading extraction so sentinels are already in place.
+  html = html.replace(/<div\b[^>]*>/gi, '<p>').replace(/<\/div\s*>/gi, '</p>');
 
   // Find explicit <p> blocks and text between them (which may be <br>-delimited)
   let rest = html;
@@ -1385,7 +1394,7 @@ app.get('/api/tracker/detail', async (req, res) => {
             result.emails.push({
               subject: subj,
               from,
-              date: msg.internalDate ? new Date(+msg.internalDate).toISOString().split('T')[0] : null,
+              date: msg.internalDate ? localDateStr(+msg.internalDate) : null,
               ts: +msg.internalDate || 0,
               bodyHtml: emailBodyToHtml(bodyResult, msg.snippet),
               isOutgoing: myEmail && from.toLowerCase().includes(myEmail),
