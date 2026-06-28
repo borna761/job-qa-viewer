@@ -877,37 +877,38 @@ function htmlToNotionBlocks(html) {
     blocks.push({ object: 'block', type, [type]: { rich_text: rt } });
   }
 
+  // Strip non-content elements before parsing
   html = html
     .replace(/<style[\s\S]*?<\/style>/gi, '')
     .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<svg[\s\S]*?<\/svg>/gi, '')
+    .replace(/<button\b[^>]*>[\s\S]*?<\/button>/gi, '')
+    .replace(/<input\b[^>]*>/gi, '')
     .replace(/<nav\b[^>]*>[\s\S]*?<\/nav>/gi, '')
     .replace(/<header\b[^>]*>[\s\S]*?<\/header>/gi, '')
     .replace(/<footer\b[^>]*>[\s\S]*?<\/footer>/gi, '');
 
-  // Prefer <main> content to avoid sidebars and widgets
+  // Prefer <main> content for full-page HTML; fragments from the extension won't have <main>
   const mainMatch = html.match(/<main\b[^>]*>([\s\S]*?)<\/main>/i);
   if (mainMatch) html = mainMatch[1];
 
+  // Convert <br> runs to paragraph separators before block parsing
+  html = html.replace(/(<br\s*\/?>\s*){2,}/gi, '</p><p>');
+
   const blockRe = /<(h[1-6]|p|li)\b[^>]*>([\s\S]*?)<\/\1\s*>/gi;
-  let lastIndex = 0;
 
   for (const m of [...html.matchAll(blockRe)]) {
-    const between = decode(html.slice(lastIndex, m.index).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ')).trim();
-    if (between) push('paragraph', between);
-
     const tag = m[1].toLowerCase();
-    const inner = m[2];
+    const inner = m[2].replace(/<br\s*\/?>/gi, ' ');
+    // Skip blocks that are purely whitespace or trivially short noise
+    const plain = decode(inner.replace(/<[^>]+>/g, '')).trim();
+    if (plain.length < 3) continue;
     if (tag === 'h1') push('heading_1', inner);
     else if (tag === 'h2') push('heading_2', inner);
     else if (/^h/.test(tag)) push('heading_3', inner);
     else if (tag === 'li') push('bulleted_list_item', inner);
     else push('paragraph', inner);
-
-    lastIndex = m.index + m[0].length;
   }
-
-  const tail = decode(html.slice(lastIndex).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ')).trim();
-  if (tail) push('paragraph', tail);
 
   return blocks;
 }
