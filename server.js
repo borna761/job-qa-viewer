@@ -1405,4 +1405,4 @@ app.get('/api/tracker/detail', async (req, res) => {
 
 // Bind to loopback only — this app serves your private answers with no auth,
 // so it must never be reachable from other machines on the network.
-app.listen(PORT, '127.0.0.1', () => console.log(`Job Q&A Viewer running at http://localhost:${PORT}`));
+app.listen(PORT, '127.0.0.1', () => console.log(`Job Tracker running at http://localhost:${PORT}`));
