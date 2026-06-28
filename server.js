@@ -197,7 +197,7 @@ function getAll() {
 
 // ---- Routes ----
 
-app.use(express.json());
+app.use(express.json({ limit: '5mb' }));
 
 app.get('/api/data', (req, res) => {
   try { res.json(getAll()); }
