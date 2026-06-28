@@ -29,14 +29,14 @@ function normalizeUrl(raw) {
 
 const ICON_CACHE = new Map();
 
-function makeFaviconImageData(opacity = 1) {
+function makeFaviconImageData(bgColor = '#1a1a2e', opacity = 1) {
   try {
     const size = 32;
     const canvas = new OffscreenCanvas(size, size);
     const ctx = canvas.getContext('2d');
     if (!ctx) return null;
     ctx.globalAlpha = opacity;
-    ctx.fillStyle = '#1a1a2e';
+    ctx.fillStyle = bgColor;
     ctx.beginPath();
     ctx.roundRect(0, 0, 32, 32, 6);
     ctx.fill();
@@ -54,30 +54,15 @@ function makeFaviconImageData(opacity = 1) {
   } catch { return null; }
 }
 
-function makeImageData(fillColor, opacity = 1) {
-  try {
-    const size = 32;
-    const canvas = new OffscreenCanvas(size, size);
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return null;
-    ctx.globalAlpha = opacity;
-    ctx.beginPath();
-    ctx.arc(size / 2, size / 2, size / 2 - 1, 0, Math.PI * 2);
-    ctx.fillStyle = fillColor;
-    ctx.fill();
-    return ctx.getImageData(0, 0, size, size);
-  } catch { return null; }
-}
-
 let DEFAULT_ICON = null;
 let OFFLINE_ICON = null;
 
 function defaultIcon() { return DEFAULT_ICON ??= makeFaviconImageData(); }
-function offlineIcon() { return OFFLINE_ICON ??= makeFaviconImageData(0.35); }
+function offlineIcon() { return OFFLINE_ICON ??= makeFaviconImageData('#6b7280', 0.35); }
 
 function iconForStage(stage) {
   if (!ICON_CACHE.has(stage))
-    ICON_CACHE.set(stage, makeImageData(STAGE_COLOR[stage] || '#6b7280'));
+    ICON_CACHE.set(stage, makeFaviconImageData(STAGE_COLOR[stage] || '#6b7280'));
   return ICON_CACHE.get(stage);
 }
 
