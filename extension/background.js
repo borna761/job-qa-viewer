@@ -31,26 +31,32 @@ const ICON_CACHE = new Map();
 
 function makeFaviconImageData(bgColor = '#1a1a2e', opacity = 1) {
   try {
-    const size = 32;
-    const canvas = new OffscreenCanvas(size, size);
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return null;
-    ctx.globalAlpha = opacity;
-    ctx.fillStyle = bgColor;
-    ctx.beginPath();
-    ctx.roundRect(0, 0, 32, 32, 6);
-    ctx.fill();
-    ctx.strokeStyle = 'white';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.roundRect(6, 8, 20, 16, 2);
-    ctx.stroke();
-    ctx.lineWidth = 1.5;
-    ctx.lineCap = 'round';
-    [[9, 13, 23, 13], [9, 17, 18, 17], [9, 21, 20, 21]].forEach(([x1, y1, x2, y2]) => {
-      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
-    });
-    return ctx.getImageData(0, 0, size, size);
+    const sizes = [16, 32, 128];
+    const results = {};
+    for (const size of sizes) {
+      const canvas = new OffscreenCanvas(size, size);
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return null;
+      const sc = size / 32;
+      ctx.globalAlpha = opacity;
+      ctx.fillStyle = bgColor;
+      ctx.beginPath();
+      ctx.roundRect(0, 0, size, size, 6 * sc);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = 'white';
+      ctx.lineWidth = 2 * sc;
+      ctx.beginPath();
+      ctx.roundRect(6 * sc, 8 * sc, 20 * sc, 16 * sc, 2 * sc);
+      ctx.stroke();
+      ctx.lineWidth = 1.5 * sc;
+      ctx.lineCap = 'round';
+      [[9, 13, 23, 13], [9, 17, 18, 17], [9, 21, 20, 21]].forEach(([x1, y1, x2, y2]) => {
+        ctx.beginPath(); ctx.moveTo(x1 * sc, y1 * sc); ctx.lineTo(x2 * sc, y2 * sc); ctx.stroke();
+      });
+      results[size] = ctx.getImageData(0, 0, size, size);
+    }
+    return results;
   } catch { return null; }
 }
 
@@ -70,7 +76,7 @@ function setIcon(tabId, imageData) {
   if (!imageData) return;
   // Use callback form so chrome.runtime.lastError is always read — suppresses
   // "Unchecked runtime.lastError" when the tab closes between query and call.
-  chrome.action.setIcon({ tabId, imageData: { 32: imageData } }, () => void chrome.runtime.lastError);
+  chrome.action.setIcon({ tabId, imageData }, () => void chrome.runtime.lastError);
 }
 
 function setTitle({ tabId, title }) {
@@ -138,7 +144,7 @@ async function updateTab(tabId, url) {
       setTitle({ tabId, title: 'Job Tracker' });
       return;
     }
-    if (!serverOnline && urlMap.size === 0) {
+    if (!serverOnline) {
       setIcon(tabId, offlineIcon());
       setTitle({ tabId, title: 'Job Tracker - server unreachable' });
       return;
@@ -148,7 +154,7 @@ async function updateTab(tabId, url) {
     const match = key ? urlMap.get(key) : null;
 
     if (match) {
-      await setIcon(tabId, iconForStage(match.stage));
+      setIcon(tabId, iconForStage(match.stage));
       setTitle({ tabId, title: `${match.company} — ${match.stage}` });
     } else {
       setIcon(tabId, defaultIcon());
