@@ -224,15 +224,15 @@ function renderSaveForm(tabUrl, { role, company }) {
 
           // ---- Greenhouse ----
           if (host.includes('greenhouse.io') || host.includes('boards.greenhouse')) {
-            for (const sel of [
-              '.job__description > div:first-child', // job-boards.greenhouse.io: first div is description, second is EEO/disclaimer
-              '.job__description',
-              '.job-post--description',
-              '#content .job__description',
-              '#app_body .posting-description',
-            ]) {
-              const el = document.querySelector(sel);
-              if (el && el.innerText.trim().length > 200) return extractClean(el);
+            const jd = document.querySelector('.job__description, .job-post--description, #app_body .posting-description');
+            if (jd && jd.innerText.trim().length > 200) {
+              const clone = jd.cloneNode(true);
+              clone.querySelectorAll(
+                'button, svg, img, input, select, textarea, script, style, form, ' +
+                '[aria-hidden="true"], [class*="premium"], [class*="apply-btn"], [class*="footer"], ' +
+                '#application-form, [id*="apply-form"], [class*="apply-form"]'
+              ).forEach(n => n.remove());
+              return clone.innerHTML;
             }
           }
 

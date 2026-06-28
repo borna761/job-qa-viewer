@@ -948,8 +948,11 @@ function htmlToNotionBlocks(html) {
   // Find explicit <p> blocks and text between them (which may be <br>-delimited)
   let rest = html;
 
-  // Replace <p>...</p> with sentinels and collect the in-between text
-  const pRe = /<p\b[^>]*>([\s\S]*?)<\/p\s*>/gi;
+  // Replace <p>...</p> and <div>...</div> with sentinels and collect the in-between text.
+  // Matching both lets us handle CMS content that uses <div> as block separators instead of <p>.
+  // Non-greedy match means nested divs each produce a separate chunk (outer captures content
+  // only up to the first inner closing tag).
+  const pRe = /<(?:p|div)\b[^>]*>([\s\S]*?)<\/(?:p|div)\s*>/gi;
   let last = 0;
   for (const m of [...rest.matchAll(pRe)]) {
     // Text before this <p>: split on <br><br> for implicit paragraphs

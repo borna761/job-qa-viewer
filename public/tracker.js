@@ -234,10 +234,12 @@ function openDetail(app) {
         linkEl.hidden = false;
       }
 
-      document.getElementById('detail-jd').innerHTML =
+      const jdEl = document.getElementById('detail-jd');
+      jdEl.innerHTML =
         data.jobDescriptionError
           ? `<p class="detail-error">Notion error: ${esc(data.jobDescriptionError)}</p>`
           : data.jobDescription || '<p class="detail-empty">No description in Notion.</p>';
+      jdEl.scrollTop = 0;
 
       const gmailErrorHtml = data.emailsError
         ? `<p class="detail-error">${gmailErrorMessage(data.emailsError)}</p>`
