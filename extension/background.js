@@ -57,7 +57,7 @@ function setIcon(tabId, imageData) {
   chrome.action.setIcon({ tabId, imageData: { 32: imageData } }, () => void chrome.runtime.lastError);
 }
 
-function setTitle(tabId, title) {
+function setTitle({ tabId, title }) {
   chrome.action.setTitle({ tabId, title }, () => void chrome.runtime.lastError);
 }
 
