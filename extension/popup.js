@@ -173,6 +173,7 @@ function renderSaveForm(tabUrl, { role, company }) {
     let pageHtml = '';
     try {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (!tab) throw new Error('no active tab');
       const [result] = await chrome.scripting.executeScript({
         target: { tabId: tab.id },
         func: () => {
@@ -196,10 +197,11 @@ function renderSaveForm(tabUrl, { role, company }) {
           }
 
           // Walk up from el until we find an ancestor with substantial text
-          function contentParent(el, minLen = 400) {
+          function contentParent(el, minLen = 400, maxLen = 15000) {
             let node = el.parentElement;
             while (node && node !== document.body) {
-              if ((node.innerText?.trim().length || 0) >= minLen) return node;
+              const len = node.innerText?.trim().length || 0;
+              if (len >= minLen && len <= maxLen) return node;
               node = node.parentElement;
             }
             return null;
