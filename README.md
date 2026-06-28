@@ -1,4 +1,4 @@
-# Job Q&A Viewer + Tracker
+# Job Tracker
 
 A local web app for managing your job search: browse and edit your interview Q&A answers, track applications through Notion, and get a Chrome extension that shows whether you've already applied to any job posting you're browsing.
 
