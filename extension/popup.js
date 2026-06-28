@@ -181,8 +181,9 @@ function renderSaveForm(tabUrl, { role, company }) {
           function extractClean(el) {
             const clone = el.cloneNode(true);
             clone.querySelectorAll(
-              'button, svg, img, input, select, textarea, script, style, ' +
-              '[aria-hidden="true"], [class*="premium"], [class*="apply-btn"], [class*="footer"]'
+              'button, svg, img, input, select, textarea, script, style, form, ' +
+              '[aria-hidden="true"], [class*="premium"], [class*="apply-btn"], [class*="footer"], ' +
+              '[id*="apply-form"], [class*="apply-form"]'
             ).forEach(n => n.remove());
             return clone.innerHTML;
           }
@@ -224,10 +225,8 @@ function renderSaveForm(tabUrl, { role, company }) {
 
           // ---- Greenhouse ----
           if (host.includes('greenhouse.io') || host.includes('boards.greenhouse')) {
-            for (const sel of ['#content .job__description', '.job-post--description', '#app_body .posting-description']) {
-              const el = document.querySelector(sel);
-              if (el && el.innerText.trim().length > 200) return extractClean(el);
-            }
+            const jd = document.querySelector('.job__description, .job-post--description, #app_body .posting-description');
+            if (jd && jd.innerText.trim().length > 200) return extractClean(jd);
           }
 
           // ---- Lever ----
