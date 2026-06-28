@@ -50,9 +50,15 @@ function iconForStage(stage) {
   return ICON_CACHE.get(stage);
 }
 
-async function setIcon(tabId, imageData) {
+function setIcon(tabId, imageData) {
   if (!imageData) return;
-  try { await chrome.action.setIcon({ tabId, imageData: { 32: imageData } }); } catch {}
+  // Use callback form so chrome.runtime.lastError is always read — suppresses
+  // "Unchecked runtime.lastError" when the tab closes between query and call.
+  chrome.action.setIcon({ tabId, imageData: { 32: imageData } }, () => void chrome.runtime.lastError);
+}
+
+function setTitle(tabId, title) {
+  chrome.action.setTitle({ tabId, title }, () => void chrome.runtime.lastError);
 }
 
 // ---- Persist / restore URL map via storage ----
@@ -113,12 +119,12 @@ async function updateTab(tabId, url) {
 
     if (!url || !url.startsWith('http')) {
       await setIcon(tabId, makeImageData('#6b7280'));
-      await chrome.action.setTitle({ tabId, title: 'Job Tracker' });
+      setTitle({ tabId, title: 'Job Tracker' });
       return;
     }
     if (!serverOnline && urlMap.size === 0) {
       await setIcon(tabId, makeImageData('#9ca3af', 0.35));
-      await chrome.action.setTitle({ tabId, title: 'Job Tracker - server unreachable' });
+      setTitle({ tabId, title: 'Job Tracker - server unreachable' });
       return;
     }
 
@@ -127,10 +133,10 @@ async function updateTab(tabId, url) {
 
     if (match) {
       await setIcon(tabId, iconForStage(match.stage));
-      await chrome.action.setTitle({ tabId, title: `${match.company} — ${match.stage}` });
+      setTitle({ tabId, title: `${match.company} — ${match.stage}` });
     } else {
       await setIcon(tabId, makeImageData('#6b7280'));
-      await chrome.action.setTitle({ tabId, title: 'Job Tracker - not applied' });
+      setTitle({ tabId, title: 'Job Tracker - not applied' });
     }
   } catch {}
 }
