@@ -197,7 +197,7 @@ function getAll() {
 
 // ---- Routes ----
 
-app.use(express.json({ limit: '5mb' }));
+app.use(express.json());
 
 app.get('/api/data', (req, res) => {
   try { res.json(getAll()); }
@@ -903,7 +903,7 @@ function htmlToNotionBlocks(html) {
     const seg = segments[idx];
     if (!seg) return;
     if (seg.type === 'list') {
-      for (const item of seg.items) push('bulleted_list_item', item);
+      for (const item of seg.items) emitChunk(item, 'bulleted_list_item');
     } else if (seg.type === 'heading') {
       const type = seg.level === 1 ? 'heading_1' : seg.level === 2 ? 'heading_2' : 'heading_3';
       push(type, seg.inner);
@@ -1052,7 +1052,7 @@ function plainTextToNotionBlocks(text) {
   return blocks;
 }
 
-app.post('/api/tracker/save', async (req, res) => {
+app.post('/api/tracker/save', express.json({ limit: '5mb' }), async (req, res) => {
   const { url, role, company, stage, pageHtml } = req.body || {};
   if (!url || !company || !stage)
     return res.status(400).json({ error: 'url, company, and stage are required' });
