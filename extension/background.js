@@ -29,6 +29,31 @@ function normalizeUrl(raw) {
 
 const ICON_CACHE = new Map();
 
+function makeFaviconImageData(opacity = 1) {
+  try {
+    const size = 32;
+    const canvas = new OffscreenCanvas(size, size);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    ctx.globalAlpha = opacity;
+    ctx.fillStyle = '#1a1a2e';
+    ctx.beginPath();
+    ctx.roundRect(0, 0, 32, 32, 6);
+    ctx.fill();
+    ctx.strokeStyle = 'white';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(6, 8, 20, 16, 2);
+    ctx.stroke();
+    ctx.lineWidth = 1.5;
+    ctx.lineCap = 'round';
+    [[9, 13, 23, 13], [9, 17, 18, 17], [9, 21, 20, 21]].forEach(([x1, y1, x2, y2]) => {
+      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+    });
+    return ctx.getImageData(0, 0, size, size);
+  } catch { return null; }
+}
+
 function makeImageData(fillColor, opacity = 1) {
   try {
     const size = 32;
@@ -43,6 +68,12 @@ function makeImageData(fillColor, opacity = 1) {
     return ctx.getImageData(0, 0, size, size);
   } catch { return null; }
 }
+
+let DEFAULT_ICON = null;
+let OFFLINE_ICON = null;
+
+function defaultIcon() { return DEFAULT_ICON ??= makeFaviconImageData(); }
+function offlineIcon() { return OFFLINE_ICON ??= makeFaviconImageData(0.35); }
 
 function iconForStage(stage) {
   if (!ICON_CACHE.has(stage))
@@ -118,12 +149,12 @@ async function updateTab(tabId, url) {
     if (urlMap.size === 0) await fetchUrlMap();
 
     if (!url || !url.startsWith('http')) {
-      await setIcon(tabId, makeImageData('#6b7280'));
+      setIcon(tabId, defaultIcon());
       setTitle({ tabId, title: 'Job Tracker' });
       return;
     }
     if (!serverOnline && urlMap.size === 0) {
-      await setIcon(tabId, makeImageData('#9ca3af', 0.35));
+      setIcon(tabId, offlineIcon());
       setTitle({ tabId, title: 'Job Tracker - server unreachable' });
       return;
     }
@@ -135,7 +166,7 @@ async function updateTab(tabId, url) {
       await setIcon(tabId, iconForStage(match.stage));
       setTitle({ tabId, title: `${match.company} — ${match.stage}` });
     } else {
-      await setIcon(tabId, makeImageData('#6b7280'));
+      setIcon(tabId, defaultIcon());
       setTitle({ tabId, title: 'Job Tracker - not applied' });
     }
   } catch {}
