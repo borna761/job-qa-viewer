@@ -532,6 +532,11 @@ const GENERIC_DOMAINS = new Set([
   'linkedin', 'indeed', 'glassdoor', 'ziprecruiter', 'monster', 'careerbuilder',
 ]);
 
+function localDateStr(ms) {
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
 function extractCompanyFromSubject(subject) {
   const patterns = [
     /application (?:to|at|with|for)\s+([A-Z][a-zA-Z0-9\s&.,'-]{1,45}?)(?:\s*[-–|,!(\n]|$)/i,
@@ -658,8 +663,8 @@ function mergeGmailIntoNotion(notionApps, gmailApps) {
 // ROLE_STRIP includes level words (senior/junior/lead) so both "Senior PM - Data Platform"
 // and "PM - Data Platform" reduce to "Data Platform" for a shared search query.
 // BODY_ROLE_STRIP keeps level words so the two roles stay distinguishable for body matching.
-const ROLE_STRIP      = /\b(senior|junior|lead|principal|staff|associate|sr|jr|product|manager|owner|analyst|pm|po|tpm|tpo|cpo|vp|head|director|remote|canada|canadian|multiple|levels|available|contract|interim|part.?time|full.?time)\b/gi;
-const BODY_ROLE_STRIP = /\b(product|manager|owner|analyst|pm|po|tpm|tpo|cpo|vp|head|director|remote|canada|canadian|multiple|levels|available|contract|interim|part.?time|full.?time)\b/gi;
+const ROLE_STRIP      = /\b(senior|junior|lead|principal|staff|associate|sr|jr|product|manager|owner|analyst|pm|po|tpm|tpo|cpo|vp|head|director|remote|canada|canadian|multiple|levels|available|contract|interim|part.?time|full.?time|job|application|position|for)\b/gi;
+const BODY_ROLE_STRIP = /\b(product|manager|owner|analyst|pm|po|tpm|tpo|cpo|vp|head|director|remote|canada|canadian|multiple|levels|available|contract|interim|part.?time|full.?time|job|application|position|for)\b/gi;
 
 function extractRoleWords(role, stripRe) {
   if (!role) return [];
@@ -1389,7 +1394,7 @@ app.get('/api/tracker/detail', async (req, res) => {
             result.emails.push({
               subject: subj,
               from,
-              date: msg.internalDate ? new Date(+msg.internalDate).toISOString().split('T')[0] : null,
+              date: msg.internalDate ? localDateStr(+msg.internalDate) : null,
               ts: +msg.internalDate || 0,
               bodyHtml: emailBodyToHtml(bodyResult, msg.snippet),
               isOutgoing: myEmail && from.toLowerCase().includes(myEmail),
