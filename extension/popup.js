@@ -181,8 +181,7 @@ function renderSaveForm(tabUrl, { role, company }) {
             const clone = el.cloneNode(true);
             clone.querySelectorAll(
               'button, svg, img, input, select, textarea, script, style, ' +
-              '[aria-hidden="true"], [class*="show-more"], [class*="see-more"], ' +
-              '[class*="premium"], [class*="apply-btn"], [class*="footer"]'
+              '[aria-hidden="true"], [class*="premium"], [class*="apply-btn"], [class*="footer"]'
             ).forEach(n => n.remove());
             return clone.innerHTML;
           }
