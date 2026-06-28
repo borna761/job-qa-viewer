@@ -437,7 +437,7 @@ function parseTitleToApp(block, stage) {
   const body    = title.replace(/^\[.*?\]\s*[—–-]\s*/, '');
   const pipeIdx = body.indexOf(' | ');
   if (pipeIdx !== -1) {
-    const role    = body.slice(0, pipeIdx).trim();
+    const role    = body.slice(0, pipeIdx).trim().replace(/^(?:job\s+)?application(?:\s+for)?\s*/i, '');
     const company = body.slice(pipeIdx + 3).trim();
     return { company, role: role || null, stage, lastUpdate, source: 'notion', notionPageId: block.id };
   }
@@ -663,8 +663,8 @@ function mergeGmailIntoNotion(notionApps, gmailApps) {
 // ROLE_STRIP includes level words (senior/junior/lead) so both "Senior PM - Data Platform"
 // and "PM - Data Platform" reduce to "Data Platform" for a shared search query.
 // BODY_ROLE_STRIP keeps level words so the two roles stay distinguishable for body matching.
-const ROLE_STRIP      = /\b(senior|junior|lead|principal|staff|associate|sr|jr|product|manager|owner|analyst|pm|po|tpm|tpo|cpo|vp|head|director|remote|canada|canadian|multiple|levels|available|contract|interim|part.?time|full.?time|job|application|position|for)\b/gi;
-const BODY_ROLE_STRIP = /\b(product|manager|owner|analyst|pm|po|tpm|tpo|cpo|vp|head|director|remote|canada|canadian|multiple|levels|available|contract|interim|part.?time|full.?time|job|application|position|for)\b/gi;
+const ROLE_STRIP      = /\b(senior|junior|lead|principal|staff|associate|sr|jr|product|manager|owner|analyst|pm|po|tpm|tpo|cpo|vp|head|director|remote|canada|canadian|multiple|levels|available|contract|interim|part.?time|full.?time)\b/gi;
+const BODY_ROLE_STRIP = /\b(product|manager|owner|analyst|pm|po|tpm|tpo|cpo|vp|head|director|remote|canada|canadian|multiple|levels|available|contract|interim|part.?time|full.?time)\b/gi;
 
 function extractRoleWords(role, stripRe) {
   if (!role) return [];
@@ -950,12 +950,12 @@ function htmlToNotionBlocks(html) {
   // <br><br>+ acts as a paragraph break; <p>...</p> is an explicit paragraph
   const chunks = [];
 
-  // Find explicit <p> blocks and text between them (which may be <br>-delimited)
-  let rest = html;
-
   // Normalise block-level divs to paragraphs so the <p> splitter below handles them.
   // Runs after list/heading extraction so sentinels are already in place.
   html = html.replace(/<div\b[^>]*>/gi, '<p>').replace(/<\/div\s*>/gi, '</p>');
+
+  // Find explicit <p> blocks and text between them (which may be <br>-delimited)
+  let rest = html;
 
   // Replace <p>...</p> with sentinels and collect the in-between text
   const pRe = /<p\b[^>]*>([\s\S]*?)<\/p\s*>/gi;
