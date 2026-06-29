@@ -169,7 +169,7 @@ const NOTION_SECTION_MAP = {
 };
 ```
 
-The key is the lowercased, spaces-removed version of your Notion stage page title.
+The key is your Notion stage page title, lowercased with every non-letter character removed (spaces, punctuation, and digits) — e.g. `Not applied` → `notapplied`, `Don't apply` → `dontapply`.
 
 ## Project structure
 
