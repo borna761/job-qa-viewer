@@ -427,7 +427,8 @@ const NOTION_SECTION_MAP = {
   turneddown:  'Turned Down',
   stale:       'Stale',
   inactive:    'Rejected',
-  // dontapply: intentionally absent → skipped
+  // Any stage page whose title-key isn't listed here is skipped
+  // (e.g. a "Don't apply" list → key "dontapply", intentionally omitted).
 };
 
 function parseTitleToApp(block, stage) {
