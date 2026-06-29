@@ -41,10 +41,10 @@ The tracker reads your applications from a Notion page with this structure:
 
 ```
 My Job Search          ← top-level page (any name)
-  ├── Not applied      ← stage page
-  ├── Active           ← stage page
-  ├── Interviews       ← stage page
-  └── Rejected         ← stage page
+  ├── Not applied      ← stage page (→ Interested)
+  ├── Active           ← stage page (→ Applied)
+  ├── Interviews       ← stage page (→ Interviews)
+  └── Inactive         ← stage page (→ Rejected)
 ```
 
 Each stage page contains child pages, one per job. Each child page title must follow this format:
@@ -159,16 +159,17 @@ The server maps your Notion stage page names to internal stages. Edit `NOTION_SE
 
 ```js
 const NOTION_SECTION_MAP = {
-  notapplied:  'Interested',
   active:      'Applied',
+  notapplied:  'Interested',
   interviews:  'Interviews',
-  stale:       'Stale',
   turneddown:  'Turned Down',
-  rejected:    'Rejected',
+  stale:       'Stale',
+  inactive:    'Rejected',
+  // dontapply: intentionally absent → skipped
 };
 ```
 
-The key is the lowercased, spaces-removed version of your Notion stage page title.
+The key is your Notion stage page title, lowercased with every non-letter character removed (spaces, punctuation, and digits) — e.g. `Not applied` → `notapplied`, `Don't apply` → `dontapply`.
 
 ## Project structure
 
