@@ -22,8 +22,8 @@ before(async () => {
   await new Promise(r => server.once('listening', r));
   base = `http://127.0.0.1:${server.address().port}`;
 });
-after(() => {
-  server.close();
+after(async () => {
+  await new Promise(r => server.close(r));
   fs.rmSync(tmp, { recursive: true, force: true });
 });
 
