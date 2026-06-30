@@ -181,14 +181,32 @@ extension/
   manifest.json         # Chrome extension manifest (MV3)
   popup.html            # Extension popup UI
   popup.js              # Extension popup logic
+lib/
+  config.js             # Shared paths + port
+  qa.js                 # Q&A parsing, serialization, ids, display names
+  store.js              # config/order persistence + getAll aggregation
+  notion.js             # Notion API client + app loading + URL-map cache
+  gmail.js              # Gmail OAuth + API client
+  email.js              # Gmail classification/extraction + body sanitize/render
+  notionHtml.js         # HTML <-> Notion-block conversion
 public/
   app.js                # Q&A viewer frontend
   tracker.js            # Job tracker frontend
   style.css             # Styles
   assets/
+test/                   # Unit tests (run with `npm test` — Node's built-in runner)
 index.html              # HTML shell
-server.js               # Express server, Notion API, Gmail API, parsing
+server.js               # Express app: loads .env, wires lib/ modules into routes
 ```
+
+## Running the tests
+
+```bash
+npm test
+```
+
+Unit tests cover the pure logic (Q&A parsing, email classification, HTML↔Notion
+conversion) using Node's built-in test runner — no dependencies to install.
 
 ## Keeping your data private
 
