@@ -92,6 +92,8 @@ node server.js
 
 Open [http://localhost:3456](http://localhost:3456). On first run with Gmail configured, go to **http://localhost:3456/api/tracker/auth** to authorise Gmail access.
 
+The server listens on port 3456 by default. Set `PORT` to change it (e.g. `PORT=4000 node server.js`) — if you do, update the redirect URI in your Google OAuth credentials to match.
+
 ### 6. Chrome extension _(optional)_
 
 1. Open Chrome → `chrome://extensions`
@@ -182,7 +184,7 @@ extension/
   popup.html            # Extension popup UI
   popup.js              # Extension popup logic
 lib/
-  config.js             # Shared paths + port
+  config.js             # Shared paths, port, and .env loading
   qa.js                 # Q&A parsing, serialization, ids, display names
   store.js              # config/order persistence + getAll aggregation
   notion.js             # Notion API client + app loading + URL-map cache
@@ -196,7 +198,7 @@ public/
   assets/
 test/                   # Unit tests (run with `npm test` — Node's built-in runner)
 index.html              # HTML shell
-server.js               # Express app: loads .env, wires lib/ modules into routes
+server.js               # Express app: wires lib/ modules into routes
 ```
 
 ## Running the tests
