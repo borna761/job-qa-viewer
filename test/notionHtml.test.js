@@ -48,3 +48,32 @@ test('plainTextToNotionBlocks emits paragraph blocks for prose', () => {
   assert.ok(blocks.length >= 1);
   assert.equal(blocks[0].type, 'paragraph');
 });
+
+test('htmlToNotionBlocks handles a mix of heading, list, and paragraph', () => {
+  const html =
+    '<h2>Responsibilities</h2>' +
+    '<ul><li>Own the roadmap end to end</li><li>Talk to customers weekly</li></ul>' +
+    '<p>We move fast and iterate constantly.</p>';
+  const blocks = htmlToNotionBlocks(html);
+  assert.ok(blocks.some(b => b.type.startsWith('heading_')));
+  assert.equal(blocks.filter(b => b.type === 'bulleted_list_item').length, 2);
+  assert.ok(blocks.some(b => b.type === 'paragraph'));
+});
+
+test('htmlToNotionBlocks preserves bold annotations in rich text', () => {
+  const blocks = htmlToNotionBlocks('<p>This is <strong>very important</strong> to remember here.</p>');
+  const rich = blocks[0].paragraph.rich_text;
+  assert.ok(rich.some(seg => seg.annotations && seg.annotations.bold));
+});
+
+test('htmlToNotionBlocks caps output at 95 blocks (Notion children limit)', () => {
+  const many = Array.from({ length: 200 }, (_, i) => `<p>Paragraph number ${i} with plenty of text.</p>`).join('');
+  assert.ok(htmlToNotionBlocks(many).length <= 95);
+});
+
+test('htmlToNotionBlocks chunks text longer than 2000 chars into multiple rich-text runs', () => {
+  const blocks = htmlToNotionBlocks(`<p>${'x'.repeat(5000)}</p>`);
+  const rich = blocks[0].paragraph.rich_text;
+  assert.ok(rich.length >= 3);
+  assert.ok(rich.every(seg => seg.text.content.length <= 2000));
+});
