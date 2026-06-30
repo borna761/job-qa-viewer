@@ -248,11 +248,8 @@ function openDetail(app) {
       const emails   = (data.emails || []).filter(e => !e.isCalendar);
       const calendar = (data.emails || []).filter(e => e.isCalendar);
 
-      document.getElementById('detail-emails').innerHTML =
-        gmailErrorHtml ?? (emails.length ? emails.map(emailCardHtml).join('') : '<p class="detail-empty">No emails found.</p>');
-
-      document.getElementById('detail-calendar').innerHTML =
-        gmailErrorHtml ?? (calendar.length ? calendar.map(emailCardHtml).join('') : '<p class="detail-empty">No calendar events found.</p>');
+      renderEmails('detail-emails',   emails,   gmailErrorHtml, 'No emails found.');
+      renderEmails('detail-calendar', calendar, gmailErrorHtml, 'No calendar events found.');
     })
     .catch(e => {
       document.getElementById('detail-jd').innerHTML =
@@ -269,9 +266,11 @@ function gmailErrorMessage(err) {
   return `Gmail error: ${esc(err)}`;
 }
 
-function emailCardHtml(e) {
+function emailCardHtml(e, idx) {
   const dir = e.isOutgoing ? 'outgoing' : 'incoming';
   const label = e.isOutgoing ? '↑ Sent' : '↓ Received';
+  // The body goes into a sandboxed iframe (filled in by renderEmails), never
+  // inline — see the security note there.
   return `
     <div class="detail-email detail-email--${dir}">
       <div class="detail-email-header">
@@ -279,9 +278,41 @@ function emailCardHtml(e) {
         <span class="detail-email-dir">${label}</span>
       </div>
       <div class="detail-email-meta">${esc(e.from)} · ${e.date || '—'}</div>
-      <div class="detail-email-body">${e.bodyHtml || ''}</div>
+      <iframe class="detail-email-body" data-email-idx="${idx}"
+              sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+              referrerpolicy="no-referrer" title="Email body"></iframe>
     </div>
   `;
+}
+
+// Render email cards, loading each body into a sandboxed iframe via srcdoc.
+// The sandbox has no `allow-scripts`, so scripts embedded in an email can never
+// execute. This is the security boundary — email HTML is untrusted (an attacker
+// can email the user), and the app runs unauthenticated on localhost with access
+// to the user's Notion and Gmail. `allow-same-origin` is included only so the
+// parent can read the frame's scrollHeight to size it; without `allow-scripts`
+// it does not let the framed content run code.
+function renderEmails(containerId, list, errorHtml, emptyText) {
+  const el = document.getElementById(containerId);
+  if (errorHtml != null) { el.innerHTML = errorHtml; return; }
+  if (!list.length) { el.innerHTML = `<p class="detail-empty">${esc(emptyText)}</p>`; return; }
+  el.innerHTML = list.map(emailCardHtml).join('');
+  el.querySelectorAll('iframe.detail-email-body').forEach(frame => {
+    const e = list[+frame.dataset.emailIdx];
+    frame.addEventListener('load', () => {
+      try {
+        const h = frame.contentDocument?.body?.scrollHeight;
+        if (h) frame.style.height = Math.min(h, 320) + 'px';
+      } catch { /* sizing is best-effort */ }
+    });
+    frame.srcdoc =
+      `<!doctype html><meta charset="utf-8"><base target="_blank">` +
+      `<style>html{overflow-x:hidden}body{margin:0;` +
+      `font:0.8rem/1.55 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;` +
+      `color:#374151;word-break:break-word}img{max-width:100%;height:auto}` +
+      `a{color:#2563eb}table{max-width:100%;font-size:inherit}</style>` +
+      (e.bodyHtml || '');
+  });
 }
 
 function closeDetail() {
