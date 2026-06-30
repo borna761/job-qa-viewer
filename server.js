@@ -454,4 +454,10 @@ app.get('/api/tracker/detail', async (req, res) => {
 
 // Bind to loopback only — this app serves your private answers with no auth,
 // so it must never be reachable from other machines on the network.
-app.listen(PORT, '127.0.0.1', () => console.log(`Job Tracker running at http://localhost:${PORT}`));
+// Only listen when run directly (`node server.js`); when required by tests,
+// just export the app so they can mount it on an ephemeral port.
+if (require.main === module) {
+  app.listen(PORT, '127.0.0.1', () => console.log(`Job Tracker running at http://localhost:${PORT}`));
+}
+
+module.exports = app;
