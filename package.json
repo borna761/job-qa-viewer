@@ -4,7 +4,8 @@
   "description": "A local web app for managing your job search: Q&A answers, application tracking via Notion, and a Chrome extension.",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --test"
   },
   "keywords": [
     "interview",
