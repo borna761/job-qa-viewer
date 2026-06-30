@@ -14,7 +14,7 @@ try {
 } catch { /* .env is optional */ }
 
 const app = express();
-const PORT = 3456;
+const PORT = process.env.PORT || 3456;
 
 const DATA_DIR    = path.join(__dirname, 'data');
 const GENERAL_FILE = path.join(DATA_DIR, 'answers.txt');
@@ -821,7 +821,10 @@ async function buildUrlMap() {
 }
 
 app.get('/api/tracker/urls', async (req, res) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  // No CORS header by design: the Chrome extension reaches this endpoint through
+  // its host_permissions for localhost, so it doesn't need Access-Control-Allow-Origin.
+  // Omitting the wildcard stops arbitrary websites the user visits from reading
+  // their tracked application list (companies, stages, job URLs).
   if (!process.env.NOTION_TOKEN)
     return res.status(503).json({ error: 'notion_not_configured' });
   if (urlMapCache && Date.now() - urlMapCacheTime < URL_MAP_TTL && !req.query.force)
