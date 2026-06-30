@@ -2,17 +2,7 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 
-// Load .env file if present (KEY=value, ignores comments and blank lines).
-// Must run before requiring ./lib modules, since some read process.env at load.
-try {
-  fs.readFileSync(path.join(__dirname, '.env'), 'utf8')
-    .split('\n')
-    .forEach(line => {
-      const m = line.match(/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*?)\s*$/);
-      if (m) process.env[m[1]] = m[2].replace(/^["']|["']$/g, '');
-    });
-} catch { /* .env is optional */ }
-
+// ./lib/config loads .env on require, before any process.env reads.
 const { PORT, DATA_DIR, GENERAL_FILE } = require('./lib/config');
 const { parseQA, serializeQA, readTxtFile, pairId, displayName, nameToSlug } = require('./lib/qa');
 const { loadConfig, saveConfig, loadOrder, saveOrder, getAll } = require('./lib/store');
