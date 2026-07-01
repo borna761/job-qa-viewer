@@ -19,7 +19,10 @@ const {
   roleBodyKeywords, cleanCompanyTerm, roleSearchTerm, buildJobEmailQuery,
   extractEmailBody, emailMatchesRole, localDateStr, emailBodyToHtml,
 } = require('./lib/email');
-const { htmlToNotionBlocks, plainTextToNotionBlocks, blocksToHtml } = require('./lib/notionHtml');
+const {
+  htmlToNotionBlocks, plainTextToNotionBlocks, blocksToHtml,
+  extractJobPostingDescription, descriptionToBlocks,
+} = require('./lib/notionHtml');
 
 const app = express();
 
@@ -226,7 +229,7 @@ app.get('/api/tracker/urls', async (req, res) => {
 });
 
 app.post('/api/tracker/save', express.json({ limit: '5mb' }), async (req, res) => {
-  const { url, role, company, stage, pageHtml } = req.body || {};
+  const { url, role, company, stage, pageHtml, pageHtmlTargeted } = req.body || {};
   if (!url || !company || !stage)
     return res.status(400).json({ error: 'url, company, and stage are required' });
   if (!process.env.NOTION_TOKEN)
@@ -244,41 +247,39 @@ app.post('/api/tracker/save', express.json({ limit: '5mb' }), async (req, res) =
     const bodyText = role ? ` — ${role} | ${company}` : ` — ${company}`;
 
     // Extract job description content for Notion.
-    // Prefer HTML sent directly by the extension (authenticated, fully rendered DOM).
-    // Fall back to server-side fetch for non-SPA pages or when scripting is unavailable.
     let children = [];
     try {
-      if (pageHtml) {
+      // 1. Trust the extension's rendered DOM when it came from a targeted
+      //    selector (LinkedIn/Greenhouse/etc.) — fast, no extra fetch. A missing
+      //    flag is treated as targeted for backward compatibility with older
+      //    extension builds.
+      if (pageHtml && pageHtmlTargeted !== false) {
         children = htmlToNotionBlocks(pageHtml);
-      } else {
-        const html = await fetch(url, {
-          headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
-          signal: AbortSignal.timeout(8000),
-        }).then(r => r.text());
-
-        let ldPlainText = '';
-        const ldMatch = html.match(/<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/i);
-        if (ldMatch) {
-          try {
-            const ld = JSON.parse(ldMatch[1]);
-            const posting = Array.isArray(ld)
-              ? ld.find(x => x['@type'] === 'JobPosting')
-              : ld['@type'] === 'JobPosting' ? ld : null;
-            if (posting?.description) {
-              if (/<[a-z]/i.test(posting.description)) {
-                children = htmlToNotionBlocks(posting.description);
-              } else {
-                ldPlainText = posting.description;
-              }
-            }
-          } catch { /* malformed JSON-LD */ }
-        }
-
-        if (!children.length) children = htmlToNotionBlocks(html);
-
-        if (!children.length && ldPlainText) children = plainTextToNotionBlocks(ldPlainText);
       }
-    } catch { /* fetch failed — save without description */ }
+
+      // 2. Otherwise (extension fell back to a greedy whole-page grab, or sent
+      //    nothing): fetch the page server-side and prefer a clean JobPosting
+      //    JSON-LD description. This rescues career-site SPAs (e.g. Phenom) whose
+      //    DOM is mostly nav/widgets. Sites that block server fetch (LinkedIn)
+      //    just fall through to the extension's pageHtml below.
+      if (!children.length) {
+        let html = '';
+        try {
+          html = await fetch(url, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
+            signal: AbortSignal.timeout(8000),
+          }).then(r => r.text());
+        } catch { /* server fetch blocked/failed */ }
+        if (html) {
+          const desc = extractJobPostingDescription(html);
+          if (desc.length > 400) children = descriptionToBlocks(desc);
+          if (!children.length) children = htmlToNotionBlocks(html);
+        }
+      }
+
+      // 3. Last resort: a greedy pageHtml grab is still better than nothing.
+      if (!children.length && pageHtml) children = htmlToNotionBlocks(pageHtml);
+    } catch { /* save without description */ }
 
     const page = await notionFetch('pages', {
       method: 'POST',
