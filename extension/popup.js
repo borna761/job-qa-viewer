@@ -171,6 +171,7 @@ function renderSaveForm(tabUrl, { role, company }) {
     // This works for SPAs (LinkedIn, Greenhouse, etc.) where server-side fetch
     // would get an unauthenticated/incomplete page.
     let pageHtml = '';
+    let pageHtmlTargeted = false;
     try {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       if (!tab) throw new Error('no active tab');
@@ -210,65 +211,72 @@ function renderSaveForm(tabUrl, { role, company }) {
 
           const host = location.hostname;
 
+          // Targeted = matched a known site/heading selector → trust it.
+          // Untargeted = greedy whole-page fallback → the server should prefer a
+          // clean JobPosting JSON-LD instead (career-site SPAs are full of chrome).
+          const targeted = (html) => ({ html, targeted: true });
+
           // ---- LinkedIn ----
           if (host.includes('linkedin.com')) {
             const h = findByText(/^about the job$/i);
             if (h) {
               const c = contentParent(h);
-              if (c) return extractClean(c);
+              if (c) return targeted(extractClean(c));
             }
             for (const sel of ['.jobs-description__content', '.jobs-description', '#job-details']) {
               const el = document.querySelector(sel);
-              if (el && el.innerText.trim().length > 200) return extractClean(el);
+              if (el && el.innerText.trim().length > 200) return targeted(extractClean(el));
             }
           }
 
           // ---- Greenhouse ----
           if (host.includes('greenhouse.io') || host.includes('boards.greenhouse')) {
             const jd = document.querySelector('.job__description, .job-post--description, #app_body .posting-description');
-            if (jd && jd.innerText.trim().length > 200) return extractClean(jd);
+            if (jd && jd.innerText.trim().length > 200) return targeted(extractClean(jd));
           }
 
           // ---- Lever ----
           if (host.includes('jobs.lever.co') || host.includes('lever.co')) {
             const el = document.querySelector('.posting-description, .section-wrapper');
-            if (el && el.innerText.trim().length > 200) return extractClean(el);
+            if (el && el.innerText.trim().length > 200) return targeted(extractClean(el));
           }
 
           // ---- Workday ----
           const workday = document.querySelector('[data-automation-id="jobPostingDescription"]');
-          if (workday) return extractClean(workday);
+          if (workday) return targeted(extractClean(workday));
 
           // ---- Ashby ----
           const ashby = document.querySelector('[class*="JobPosting_description"], [class*="jobPosting"]');
-          if (ashby) return extractClean(ashby);
+          if (ashby) return targeted(extractClean(ashby));
 
           // ---- Generic fallback ----
           // Find the heading that looks like a job description title, then grab its section
           const jobHeading = findByText(/^(about (this |the )?role|job description|responsibilities|the role)$/i);
           if (jobHeading) {
             const c = contentParent(jobHeading);
-            if (c) return extractClean(c);
+            if (c) return targeted(extractClean(c));
           }
 
-          // Last resort: largest content block that isn't nav/chrome
+          // Last resort: largest content block that isn't nav/chrome — flagged
+          // untargeted so the server can prefer JSON-LD if the page has it.
           let best = null, bestLen = 0;
           for (const el of document.querySelectorAll('article, main, [role="main"], section')) {
             if (el.closest('nav, header, footer, aside')) continue;
             const len = el.innerText?.trim().length || 0;
             if (len > bestLen && len < 50000) { bestLen = len; best = el; }
           }
-          return best && bestLen > 200 ? extractClean(best) : '';
+          return { html: best && bestLen > 200 ? extractClean(best) : '', targeted: false };
         },
       });
-      pageHtml = result?.result || '';
+      pageHtml = result?.result?.html || '';
+      pageHtmlTargeted = result?.result?.targeted || false;
     } catch { /* scripting not available on this page — server will re-fetch */ }
 
     try {
       const res = await fetch(`${API}/api/tracker/save`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: tabUrl, role: roleVal, company: companyVal, stage: stageVal, pageHtml }),
+        body: JSON.stringify({ url: tabUrl, role: roleVal, company: companyVal, stage: stageVal, pageHtml, pageHtmlTargeted }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || res.statusText);

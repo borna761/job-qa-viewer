@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const {
   escHtml, richTextToHtml, blocksToHtml,
   htmlToNotionBlocks, plainTextToNotionBlocks,
+  extractJobPostingDescription, descriptionToBlocks,
 } = require('../lib/notionHtml');
 
 test('escHtml escapes the HTML-significant characters', () => {
@@ -76,4 +77,33 @@ test('htmlToNotionBlocks chunks text longer than 2000 chars into multiple rich-t
   const rich = blocks[0].paragraph.rich_text;
   assert.ok(rich.length >= 3);
   assert.ok(rich.every(seg => seg.text.content.length <= 2000));
+});
+
+// A page like careers.evercommerce.com: multiple ld+json blocks, the JobPosting
+// is NOT first, and its description is entity-encoded HTML.
+const JOBPAGE_HTML = `
+<html><head>
+<script type="application/ld+json">{"@type":"WebSite","name":"Careers"}</script>
+<script type="application/ld+json">{"@type":"JobPosting","title":"Product Manager",
+"description":"&lt;p&gt;About the Role&lt;br /&gt;We are hiring a PM to own the roadmap.&lt;/p&gt;&lt;ul&gt;&lt;li&gt;Ship product end to end&lt;/li&gt;&lt;li&gt;Talk to customers weekly&lt;/li&gt;&lt;/ul&gt;"}</script>
+</head><body><nav>Apply Now</nav><section>Similar Jobs ...</section></body></html>`;
+
+test('extractJobPostingDescription finds JobPosting in any ld+json block and decodes entity tags', () => {
+  const desc = extractJobPostingDescription(JOBPAGE_HTML);
+  assert.match(desc, /<p>/);
+  assert.match(desc, /<li>Ship product end to end<\/li>/);
+  assert.doesNotMatch(desc, /&lt;/);
+});
+
+test('extractJobPostingDescription returns empty string when no JobPosting present', () => {
+  assert.equal(extractJobPostingDescription('<html><script type="application/ld+json">{"@type":"WebSite"}</script></html>'), '');
+  assert.equal(extractJobPostingDescription('<html>no structured data</html>'), '');
+});
+
+test('descriptionToBlocks turns a JobPosting description into clean blocks without page chrome', () => {
+  const blocks = descriptionToBlocks(extractJobPostingDescription(JOBPAGE_HTML));
+  assert.ok(blocks.length >= 1);
+  assert.equal(blocks.filter(b => b.type === 'bulleted_list_item').length, 2);
+  const allText = blocks.map(b => (b[b.type].rich_text || []).map(r => r.text.content).join('')).join(' ');
+  assert.doesNotMatch(allText, /Apply Now|Similar Jobs/);
 });
