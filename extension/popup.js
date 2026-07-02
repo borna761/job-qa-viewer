@@ -38,14 +38,56 @@ function stageBadge(stage) {
   return `<span class="stage-badge" style="background:${c.bg};color:${c.color}">${esc(stage)}</span>`;
 }
 
+// Capitalize the first letter of each word without altering punctuation —
+// safe for already human-readable strings like a JSON-LD job title
+// ("EverPro - Product Manager" must keep its "-", not lose it to spaces).
+// Also fixes letter-digit-letter tokens (b2b -> B2B, b2c -> B2C, p2p -> P2P):
+// that shape is essentially always an X-to-Y business acronym, never a real
+// word, so it's safe to always fully uppercase.
+function capitalizeWords(s) {
+  return s
+    .replace(/\b\w/g, c => c.toUpperCase())
+    .replace(/\b[a-zA-Z]\d[a-zA-Z]\b/g, m => m.toUpperCase())
+    .trim();
+}
+
+// Slug -> Title Case: also turns hyphens/underscores into spaces, since
+// these inputs are dash-joined slugs (e.g. from a URL path), not prose.
+function titleCase(s) {
+  return capitalizeWords(s.replace(/[-_]/g, ' '));
+}
+
+// Read role/company from the page's JobPosting JSON-LD, when present. This is
+// injected into the tab via chrome.scripting.executeScript, so it must be a
+// self-contained function (no closures over the outer scope).
+function readJobPostingJsonLd() {
+  const scripts = document.querySelectorAll('script[type="application/ld+json"]');
+  for (const s of scripts) {
+    let json;
+    try { json = JSON.parse(s.textContent); } catch { continue; }
+    const nodes = Array.isArray(json) ? json : (json['@graph'] || [json]);
+    for (const node of nodes) {
+      if (node && node['@type'] === 'JobPosting') {
+        const role = node.title;
+        const company = node.hiringOrganization && node.hiringOrganization.name;
+        if (role && company) return { role, company };
+      }
+    }
+  }
+  return null;
+}
+
+// Fallback when there's no JobPosting JSON-LD: guess role/company from the
+// tab title. Unreliable on career sites that render the title as a
+// breadcrumb ("Job postings | Role | Location | Company | site.com") — the
+// JSON-LD path above is preferred whenever it's available.
 function extractJobInfo(pageTitle, tabUrl) {
   try {
     const u = new URL(tabUrl);
     const m = u.pathname.match(/\/job\/(?:[^/]+\/)?([^/]+?)(?:_[Rr]\d+)?(?:\/|$)/);
     if (m) {
-      const role = m[1].replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase()).trim();
-      const company = u.hostname.replace(/^www\./, '').split('.')[0]
-        .replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+      const role = titleCase(m[1]);
+      const company = titleCase(u.hostname.replace(/^www\./, '').split('.')[0]);
       if (role) return { role, company };
     }
   } catch {}
@@ -308,7 +350,16 @@ async function init() {
     if (match) {
       renderTracked(match);
     } else {
-      renderSaveForm(tab.url, extractJobInfo(tab.title || '', tab.url));
+      let info = extractJobInfo(tab.title || '', tab.url);
+      try {
+        const [result] = await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          func: readJobPostingJsonLd,
+        });
+        const jsonLd = result?.result;
+        if (jsonLd) info = { role: capitalizeWords(jsonLd.role), company: jsonLd.company };
+      } catch { /* scripting not available on this page — keep the title-based guess */ }
+      renderSaveForm(tab.url, info);
     }
   } catch (e) {
     document.getElementById('root').innerHTML = '<p class="loading" style="padding:14px">Error: ' + e.message + '</p>';
