@@ -21,7 +21,7 @@ const {
 } = require('./lib/email');
 const {
   htmlToNotionBlocks, plainTextToNotionBlocks, blocksToHtml,
-  extractJobPostingDescription, descriptionToBlocks,
+  isAllowedEmbeddedJobUrl, fetchAndExtractBlocks,
 } = require('./lib/notionHtml');
 
 const app = express();
@@ -229,7 +229,7 @@ app.get('/api/tracker/urls', async (req, res) => {
 });
 
 app.post('/api/tracker/save', express.json({ limit: '5mb' }), async (req, res) => {
-  const { url, role, company, stage, pageHtml, pageHtmlTargeted } = req.body || {};
+  const { url, role, company, stage, pageHtml, pageHtmlTargeted, embeddedJobUrl } = req.body || {};
   if (!url || !company || !stage)
     return res.status(400).json({ error: 'url, company, and stage are required' });
   if (!process.env.NOTION_TOKEN)
@@ -257,27 +257,22 @@ app.post('/api/tracker/save', express.json({ limit: '5mb' }), async (req, res) =
         children = htmlToNotionBlocks(pageHtml);
       }
 
-      // 2. Otherwise (extension fell back to a greedy whole-page grab, or sent
+      // 2. If the page embeds a known ATS's hosted job page in an iframe (e.g.
+      //    a company careers page embedding Ashby/Greenhouse/Lever/Workday),
+      //    that iframe's own URL is a real, directly-fetchable page — try it
+      //    before the top-level page, which is usually just marketing/culture
+      //    content with no job-specific data at all.
+      if (!children.length && embeddedJobUrl && isAllowedEmbeddedJobUrl(embeddedJobUrl))
+        children = await fetchAndExtractBlocks(embeddedJobUrl);
+
+      // 3. Otherwise (extension fell back to a greedy whole-page grab, or sent
       //    nothing): fetch the page server-side and prefer a clean JobPosting
       //    JSON-LD description. This rescues career-site SPAs (e.g. Phenom) whose
       //    DOM is mostly nav/widgets. Sites that block server fetch (LinkedIn)
       //    just fall through to the extension's pageHtml below.
-      if (!children.length) {
-        let html = '';
-        try {
-          html = await fetch(url, {
-            headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
-            signal: AbortSignal.timeout(8000),
-          }).then(r => r.text());
-        } catch { /* server fetch blocked/failed */ }
-        if (html) {
-          const desc = extractJobPostingDescription(html);
-          if (desc.length > 400) children = descriptionToBlocks(desc);
-          if (!children.length) children = htmlToNotionBlocks(html);
-        }
-      }
+      if (!children.length) children = await fetchAndExtractBlocks(url);
 
-      // 3. Last resort: a greedy pageHtml grab is still better than nothing.
+      // 4. Last resort: a greedy pageHtml grab is still better than nothing.
       if (!children.length && pageHtml) children = htmlToNotionBlocks(pageHtml);
     } catch { /* save without description */ }
 

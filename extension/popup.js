@@ -214,6 +214,7 @@ function renderSaveForm(tabUrl, { role, company }) {
     // would get an unauthenticated/incomplete page.
     let pageHtml = '';
     let pageHtmlTargeted = false;
+    let embeddedJobUrl = null;
     try {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       if (!tab) throw new Error('no active tab');
@@ -251,12 +252,32 @@ function renderSaveForm(tabUrl, { role, company }) {
             return null;
           }
 
+          // Detect a same-tab iframe embedding a known ATS's hosted job page —
+          // many company career pages embed Ashby/Greenhouse/Lever/Workday this
+          // way rather than linking straight to the ATS. Cross-origin iframe
+          // *content* isn't reachable from here, but src is just an HTML
+          // attribute (always readable), and it's a real, directly-fetchable
+          // page the server can extract from independently.
+          function findEmbeddedAtsIframeUrl() {
+            const ATS_HOSTS = ['ashbyhq.com', 'greenhouse.io', 'lever.co', 'myworkday.com'];
+            for (const f of document.querySelectorAll('iframe[src]')) {
+              try {
+                const host = new URL(f.src, location.href).hostname;
+                // Proper subdomain check — host.endsWith(h) alone would also
+                // match a lookalike like "evilashbyhq.com".
+                if (ATS_HOSTS.some(h => host === h || host.endsWith('.' + h))) return f.src;
+              } catch {}
+            }
+            return null;
+          }
+          const embeddedJobUrl = findEmbeddedAtsIframeUrl();
+
           const host = location.hostname;
 
           // Targeted = matched a known site/heading selector → trust it.
           // Untargeted = greedy whole-page fallback → the server should prefer a
           // clean JobPosting JSON-LD instead (career-site SPAs are full of chrome).
-          const targeted = (html) => ({ html, targeted: true });
+          const targeted = (html) => ({ html, targeted: true, embeddedJobUrl });
 
           // ---- LinkedIn ----
           if (host.includes('linkedin.com')) {
@@ -307,18 +328,19 @@ function renderSaveForm(tabUrl, { role, company }) {
             const len = el.innerText?.trim().length || 0;
             if (len > bestLen && len < 50000) { bestLen = len; best = el; }
           }
-          return { html: best && bestLen > 200 ? extractClean(best) : '', targeted: false };
+          return { html: best && bestLen > 200 ? extractClean(best) : '', targeted: false, embeddedJobUrl };
         },
       });
       pageHtml = result?.result?.html || '';
       pageHtmlTargeted = result?.result?.targeted || false;
+      embeddedJobUrl = result?.result?.embeddedJobUrl || null;
     } catch { /* scripting not available on this page — server will re-fetch */ }
 
     try {
       const res = await fetch(`${API}/api/tracker/save`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: tabUrl, role: roleVal, company: companyVal, stage: stageVal, pageHtml, pageHtmlTargeted }),
+        body: JSON.stringify({ url: tabUrl, role: roleVal, company: companyVal, stage: stageVal, pageHtml, pageHtmlTargeted, embeddedJobUrl }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || res.statusText);
