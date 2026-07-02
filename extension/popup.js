@@ -41,8 +41,14 @@ function stageBadge(stage) {
 // Capitalize the first letter of each word without altering punctuation —
 // safe for already human-readable strings like a JSON-LD job title
 // ("EverPro - Product Manager" must keep its "-", not lose it to spaces).
+// Also fixes letter-digit-letter tokens (b2b -> B2B, b2c -> B2C, p2p -> P2P):
+// that shape is essentially always an X-to-Y business acronym, never a real
+// word, so it's safe to always fully uppercase.
 function capitalizeWords(s) {
-  return s.replace(/\b\w/g, c => c.toUpperCase()).trim();
+  return s
+    .replace(/\b\w/g, c => c.toUpperCase())
+    .replace(/\b[a-zA-Z]\d[a-zA-Z]\b/g, m => m.toUpperCase())
+    .trim();
 }
 
 // Slug -> Title Case: also turns hyphens/underscores into spaces, since
