@@ -4,6 +4,7 @@ const {
   escHtml, richTextToHtml, blocksToHtml,
   htmlToNotionBlocks, plainTextToNotionBlocks,
   extractJobPostingDescription, descriptionToBlocks,
+  isAllowedEmbeddedJobUrl,
 } = require('../lib/notionHtml');
 
 test('escHtml escapes the HTML-significant characters', () => {
@@ -130,4 +131,22 @@ test('htmlToNotionBlocks strips <head> content even when the body has real text'
   const allText = blocks.map(b => (b[b.type].rich_text || []).map(r => r.text.content).join('')).join(' ');
   assert.match(allText, /Real job description content here/);
   assert.doesNotMatch(allText, /Ignore Me/);
+});
+
+test('isAllowedEmbeddedJobUrl allows known ATS hosts and their subdomains over https', () => {
+  assert.equal(isAllowedEmbeddedJobUrl('https://jobs.ashbyhq.com/Acme/abc?embed=js'), true);
+  assert.equal(isAllowedEmbeddedJobUrl('https://boards.greenhouse.io/acme'), true);
+  assert.equal(isAllowedEmbeddedJobUrl('https://jobs.lever.co/acme/xyz'), true);
+  assert.equal(isAllowedEmbeddedJobUrl('https://acme.myworkday.com/careers/job/1'), true);
+});
+
+test('isAllowedEmbeddedJobUrl rejects lookalike hosts, non-https, and malformed URLs', () => {
+  // "evilashbyhq.com" ends with the substring "ashbyhq.com" but is not a
+  // subdomain of it — a naive .endsWith(host) check would wrongly allow this.
+  assert.equal(isAllowedEmbeddedJobUrl('https://evilashbyhq.com/x'), false);
+  assert.equal(isAllowedEmbeddedJobUrl('https://notashbyhq.com/x'), false);
+  assert.equal(isAllowedEmbeddedJobUrl('http://jobs.ashbyhq.com/x'), false); // not https
+  assert.equal(isAllowedEmbeddedJobUrl('https://example.com/x'), false);
+  assert.equal(isAllowedEmbeddedJobUrl('not a url'), false);
+  assert.equal(isAllowedEmbeddedJobUrl(''), false);
 });
