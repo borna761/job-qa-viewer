@@ -107,3 +107,27 @@ test('descriptionToBlocks turns a JobPosting description into clean blocks witho
   const allText = blocks.map(b => (b[b.type].rich_text || []).map(r => r.text.content).join('')).join(' ');
   assert.doesNotMatch(allText, /Apply Now|Similar Jobs/);
 });
+
+// A client-side-rendered SPA whose server response never populates the app
+// (e.g. a broken third-party script, an auth wall, or a slow API call) —
+// modeled on the real careerpuck.com shell.
+const EMPTY_SPA_SHELL_HTML = `<!doctype html>
+<html><head>
+<title>Lyft Product Manager, Enterprise Software</title>
+<meta name="description" content="Apply to this role.">
+</head><body>
+<noscript>You need to enable JavaScript to run this app.</noscript>
+<div id="root"></div>
+</body></html>`;
+
+test('htmlToNotionBlocks ignores <title> and <noscript> text from an empty SPA shell', () => {
+  assert.deepEqual(htmlToNotionBlocks(EMPTY_SPA_SHELL_HTML), []);
+});
+
+test('htmlToNotionBlocks strips <head> content even when the body has real text', () => {
+  const html = `<head><title>Ignore Me</title></head><body><p>Real job description content here.</p></body>`;
+  const blocks = htmlToNotionBlocks(html);
+  const allText = blocks.map(b => (b[b.type].rich_text || []).map(r => r.text.content).join('')).join(' ');
+  assert.match(allText, /Real job description content here/);
+  assert.doesNotMatch(allText, /Ignore Me/);
+});
