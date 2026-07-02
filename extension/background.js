@@ -193,10 +193,35 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     return true;
   }
   // Runs here, not in popup.js: the popup's own JS is torn down the instant
-  // it closes, so a setTimeout set there would never fire once we close the
-  // popup right after opening the tab.
-  if (msg.type === 'closeTabAfterDelay') {
-    setTimeout(() => chrome.tabs.remove(msg.tabId, () => void chrome.runtime.lastError), msg.delayMs);
+  // it closes, so listeners/timers set there would never fire once we close
+  // the popup right after opening the tab.
+  //
+  // Closes tabId once it's actually finished loading (plus a short buffer
+  // for its own redirect JS to run), rather than guessing a single fixed
+  // delay up front that has to cover the worst case network/machine speed —
+  // and never closes it out from under the user if they've switched to it
+  // themselves in the meantime.
+  if (msg.type === 'closeTabWhenLoaded') {
+    const { tabId } = msg;
+    const POST_LOAD_BUFFER_MS = 800;
+    const SAFETY_NET_MS = 6000; // in case 'complete' never fires for this tab
+    let closed = false;
+    const attemptClose = () => {
+      if (closed) return;
+      closed = true;
+      chrome.tabs.onUpdated.removeListener(onUpdate);
+      chrome.tabs.get(tabId, (t) => {
+        if (chrome.runtime.lastError) return; // tab already gone
+        if (t?.active) return; // user switched to it — leave it alone
+        chrome.tabs.remove(tabId, () => void chrome.runtime.lastError);
+      });
+    };
+    const onUpdate = (updatedTabId, change) => {
+      if (updatedTabId === tabId && change.status === 'complete')
+        setTimeout(attemptClose, POST_LOAD_BUFFER_MS);
+    };
+    chrome.tabs.onUpdated.addListener(onUpdate);
+    setTimeout(attemptClose, SAFETY_NET_MS);
     return false;
   }
 });

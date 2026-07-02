@@ -145,12 +145,13 @@ function renderTracked(entry) {
   const notionBtn = document.getElementById('open-notion');
   if (notionBtn) {
     notionBtn.addEventListener('click', async () => {
-      // Open in a background tab (no visible tab switch) and let it sit just
-      // long enough for Notion's own page to fire the native-app handoff,
-      // then have the background script close it — see closeTabAfterDelay
-      // in background.js for why that can't happen from here.
+      notionBtn.disabled = true; // guard against a fast double-click opening two tabs
+      // Open in a background tab (no visible tab switch); background.js
+      // closes it once it's loaded and had a chance to fire the native-app
+      // handoff — see closeTabWhenLoaded in background.js for why that can't
+      // happen from here.
       const tab = await chrome.tabs.create({ url: notionPageUrl(entry.notionPageId), active: false });
-      chrome.runtime.sendMessage({ type: 'closeTabAfterDelay', tabId: tab.id, delayMs: 2500 });
+      chrome.runtime.sendMessage({ type: 'closeTabWhenLoaded', tabId: tab.id });
       window.close();
     });
   }
