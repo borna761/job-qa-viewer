@@ -105,10 +105,12 @@ function extractJobInfo(pageTitle, tabUrl) {
   return { role: title, company: '' };
 }
 
-// Notion accepts a page URL with just the 32-char id (no dashes, no title
-// slug needed) and redirects to the canonical URL.
+// app.notion.com/native/p/{id} is Notion's own app-launch bridge page (what
+// notion.so/{id} redirects to anyway) — linking here directly skips that
+// redirect hop. It degrades gracefully ("continue in your browser") when the
+// desktop app isn't installed, and needs no dashes/title slug in the id.
 function notionPageUrl(pageId) {
-  return `https://www.notion.so/${pageId.replace(/-/g, '')}`;
+  return `https://app.notion.com/native/p/${pageId.replace(/-/g, '')}`;
 }
 
 function renderTracked(entry) {
