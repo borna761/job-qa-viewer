@@ -105,6 +105,12 @@ function extractJobInfo(pageTitle, tabUrl) {
   return { role: title, company: '' };
 }
 
+// Notion accepts a page URL with just the 32-char id (no dashes, no title
+// slug needed) and redirects to the canonical URL.
+function notionPageUrl(pageId) {
+  return `https://www.notion.so/${pageId.replace(/-/g, '')}`;
+}
+
 function renderTracked(entry) {
   const root = document.getElementById('root');
   root.innerHTML = `
@@ -116,6 +122,9 @@ function renderTracked(entry) {
     </div>
     <div class="btn-row">
       <button class="open-btn" id="open-tracker">Open Tracker</button>
+      ${entry.notionPageId
+        ? `<a class="notion-btn" href="${esc(notionPageUrl(entry.notionPageId))}" target="_blank" rel="noopener">Notion</a>`
+        : ''}
       <button class="refresh-btn" id="refresh-btn" title="Refresh from Notion">↻</button>
     </div>
     <div class="emails-title">Recent emails</div>
