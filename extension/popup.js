@@ -124,9 +124,7 @@ function renderTracked(entry) {
     </div>
     <div class="btn-row">
       <button class="open-btn" id="open-tracker">Open Tracker</button>
-      ${entry.notionPageId
-        ? `<a class="notion-btn" href="${esc(notionPageUrl(entry.notionPageId))}" target="_blank" rel="noopener">Notion</a>`
-        : ''}
+      ${entry.notionPageId ? `<button class="notion-btn" id="open-notion">Notion</button>` : ''}
       <button class="refresh-btn" id="refresh-btn" title="Refresh from Notion">↻</button>
     </div>
     <div class="emails-title">Recent emails</div>
@@ -143,6 +141,19 @@ function renderTracked(entry) {
     }
     window.close();
   });
+
+  const notionBtn = document.getElementById('open-notion');
+  if (notionBtn) {
+    notionBtn.addEventListener('click', async () => {
+      // Open in a background tab (no visible tab switch) and let it sit just
+      // long enough for Notion's own page to fire the native-app handoff,
+      // then have the background script close it — see closeTabAfterDelay
+      // in background.js for why that can't happen from here.
+      const tab = await chrome.tabs.create({ url: notionPageUrl(entry.notionPageId), active: false });
+      chrome.runtime.sendMessage({ type: 'closeTabAfterDelay', tabId: tab.id, delayMs: 2500 });
+      window.close();
+    });
+  }
 
   document.getElementById('refresh-btn').addEventListener('click', async () => {
     const btn = document.getElementById('refresh-btn');

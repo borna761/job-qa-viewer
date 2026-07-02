@@ -192,4 +192,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     fetchUrlMap(msg.force).then(() => sendResponse({ ok: true }));
     return true;
   }
+  // Runs here, not in popup.js: the popup's own JS is torn down the instant
+  // it closes, so a setTimeout set there would never fire once we close the
+  // popup right after opening the tab.
+  if (msg.type === 'closeTabAfterDelay') {
+    setTimeout(() => chrome.tabs.remove(msg.tabId, () => void chrome.runtime.lastError), msg.delayMs);
+    return false;
+  }
 });
