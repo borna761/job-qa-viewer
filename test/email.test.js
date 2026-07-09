@@ -37,24 +37,33 @@ test('cleanCompanyTerm strips suffixes and punctuation', () => {
 });
 
 test('roleSearchTerm keeps distinctive words, drops generic ones', () => {
-  assert.equal(roleSearchTerm('Senior Product Manager, Data Platform'), 'Data Platform');
+  // "platform" is in ROLE_STRIP (too generic), so only "Data" survives
+  assert.equal(roleSearchTerm('Senior Product Manager, Data Platform'), 'Data');
+  assert.equal(roleSearchTerm('Product Manager, Tandem'), 'Tandem');
   assert.equal(roleSearchTerm('Product Manager'), null);
   assert.equal(roleSearchTerm(null), null);
 });
 
-test('roleBodyKeywords keeps level words and lowercases', () => {
-  assert.deepEqual(roleBodyKeywords('Senior PM - Data Platform'), ['senior', 'data', 'platform']);
+test('roleBodyKeywords strips level and generic words, lowercases', () => {
+  // "senior", "pm", and "platform" are all in BODY_ROLE_STRIP
+  assert.deepEqual(roleBodyKeywords('Senior PM - Data Platform'), ['data']);
+  assert.deepEqual(roleBodyKeywords('Product Manager, Tandem'), ['tandem']);
+  assert.deepEqual(roleBodyKeywords('Sr. Product Manager, Fusion'), ['fusion']);
 });
 
-test('buildJobEmailQuery anchors on subject; keyword clause only without a role term', () => {
-  const withRole = buildJobEmailQuery('Acme', 'Data Platform');
+test('buildJobEmailQuery uses subject+from clause; always includes job keywords', () => {
+  const withRole = buildJobEmailQuery('Acme', 'Tandem');
   assert.match(withRole, /subject:"Acme"/);
-  assert.match(withRole, /"Data" "Platform"/);
+  assert.match(withRole, /from:acme/);
+  assert.match(withRole, /"Tandem"/);
+  // JOB_KEYWORDS always present as OR fallback so ATS confirmation emails are caught
+  assert.match(withRole, /"your application"/);
   assert.match(withRole, /newer_than:730d/);
-  assert.doesNotMatch(withRole, /application OR interview/);
 
   const companyOnly = buildJobEmailQuery('Acme', null);
-  assert.match(companyOnly, /application OR interview OR offer/);
+  assert.match(companyOnly, /subject:"Acme"/);
+  assert.match(companyOnly, /from:acme/);
+  assert.match(companyOnly, /"your application"/);
 });
 
 test('emailMatchesRole: all-or-nothing keyword match', () => {
