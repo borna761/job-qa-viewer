@@ -64,6 +64,15 @@ test('buildJobEmailQuery uses subject+from clause; always includes job keywords'
   assert.match(companyOnly, /subject:"Acme"/);
   assert.match(companyOnly, /from:acme/);
   assert.match(companyOnly, /"your application"/);
+
+  // strict=true omits JOB_KEYWORDS so only role-term matches are returned
+  const strict = buildJobEmailQuery('Acme', 'Tandem', { strict: true });
+  assert.match(strict, /"Tandem"/);
+  assert.doesNotMatch(strict, /"your application"/);
+
+  // dots in company name are preserved in fromTerm so "from:booking.com" works
+  const dotDomain = buildJobEmailQuery('Booking.com', 'Engineer');
+  assert.match(dotDomain, /from:booking\.com/);
 });
 
 test('emailMatchesRole: all-or-nothing keyword match', () => {

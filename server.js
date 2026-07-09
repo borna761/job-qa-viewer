@@ -428,8 +428,11 @@ app.get('/api/tracker/detail', async (req, res) => {
               : (msg.snippet || '');
             const fullText = subj + ' ' + bodyText;
             if (!emailMatchesRole(fullText, roleKeywords)) continue;
-            // Exclude if email clearly belongs to a competing role but NOT the current role
-            if (competingKeywordSets.some(kws =>
+            // Exclude if email clearly belongs to a competing role but NOT the current role.
+            // Skip this guard when the current app has no role keywords — empty roleKeywords
+            // makes emailBelongsToRole always return false, which would exclude every email
+            // that matches any competing role even though the current app has no filter to apply.
+            if (roleKeywords.length && competingKeywordSets.some(kws =>
               emailBelongsToRole(fullText, kws) && !emailBelongsToRole(fullText, roleKeywords)
             )) continue;
             const isCalendar = /calendar-notification@google\.com|calendly\.com|@calendly\b/i.test(from) ||
