@@ -224,6 +224,11 @@ function openDetail(app) {
   const params = new URLSearchParams({ company: app.company });
   if (app.notionPageId) params.set('notionPageId', app.notionPageId);
   if (app.role) params.set('role', app.role);
+  // Pass other roles at the same company so the server can exclude emails that
+  // clearly belong to a competing application (e.g. multiple Autodesk positions).
+  (appsCache || [])
+    .filter(a => a !== app && a.role && a.company.toLowerCase() === app.company.toLowerCase())
+    .forEach(a => params.append('otherRoles', a.role));
 
   fetch(`/api/tracker/detail?${params}`)
     .then(r => r.json())

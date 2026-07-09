@@ -17,7 +17,7 @@ const {
 const {
   fetchGmailApps, mergeGmailIntoNotion, enrichEmailDates,
   roleBodyKeywords, cleanCompanyTerm, roleSearchTerm, buildJobEmailQuery,
-  extractEmailBody, emailMatchesRole, localDateStr, emailBodyToHtml,
+  extractEmailBody, emailMatchesRole, emailBelongsToRole, localDateStr, emailBodyToHtml,
 } = require('./lib/email');
 const {
   htmlToNotionBlocks, plainTextToNotionBlocks, blocksToHtml,
@@ -402,6 +402,8 @@ app.get('/api/tracker/detail', async (req, res) => {
 
       const { role } = req.query;
       const roleKeywords = roleBodyKeywords(role);
+      const otherRoles = [].concat(req.query.otherRoles || []).filter(Boolean);
+      const competingKeywordSets = otherRoles.map(roleBodyKeywords).filter(kws => kws.length > 0);
       const companyTerm = cleanCompanyTerm(company);
       const roleTerm = roleSearchTerm(role);
       // Use subject: so a company name appearing only in an email body (e.g. LinkedIn "top jobs" sections) doesn't pollute another company's panel
@@ -424,7 +426,10 @@ app.get('/api/tracker/detail', async (req, res) => {
                   ? bodyResult.content.replace(/<[^>]+>/g, ' ')
                   : bodyResult.content)
               : (msg.snippet || '');
-            if (!emailMatchesRole(subj + ' ' + bodyText, roleKeywords)) continue;
+            const fullText = subj + ' ' + bodyText;
+            if (!emailMatchesRole(fullText, roleKeywords)) continue;
+            // Exclude emails that clearly belong to a competing role at the same company
+            if (competingKeywordSets.some(kws => emailBelongsToRole(fullText, kws))) continue;
             const isCalendar = /calendar-notification@google\.com|calendly\.com|@calendly\b/i.test(from) ||
               /\.ics|calendar invite|interview.*scheduled|scheduled.*interview|^appointment booked|^invitation from (an? )?unknown sender|^invitation for .*(call|meeting|interview)|^reminder:.*(call|meeting|interview|@)/i.test(subj);
             result.emails.push({
