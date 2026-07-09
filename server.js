@@ -428,8 +428,10 @@ app.get('/api/tracker/detail', async (req, res) => {
               : (msg.snippet || '');
             const fullText = subj + ' ' + bodyText;
             if (!emailMatchesRole(fullText, roleKeywords)) continue;
-            // Exclude emails that clearly belong to a competing role at the same company
-            if (competingKeywordSets.some(kws => emailBelongsToRole(fullText, kws))) continue;
+            // Exclude if email clearly belongs to a competing role but NOT the current role
+            if (competingKeywordSets.some(kws =>
+              emailBelongsToRole(fullText, kws) && !emailBelongsToRole(fullText, roleKeywords)
+            )) continue;
             const isCalendar = /calendar-notification@google\.com|calendly\.com|@calendly\b/i.test(from) ||
               /\.ics|calendar invite|interview.*scheduled|scheduled.*interview|^appointment booked|^invitation from (an? )?unknown sender|^invitation for .*(call|meeting|interview)|^reminder:.*(call|meeting|interview|@)/i.test(subj);
             result.emails.push({
