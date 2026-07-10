@@ -406,8 +406,13 @@ app.get('/api/tracker/detail', async (req, res) => {
       const competingKeywordSets = otherRoles.map(roleBodyKeywords).filter(kws => kws.length > 0);
       const companyTerm = cleanCompanyTerm(company);
       const roleTerm = roleSearchTerm(role);
-      // Use subject: so a company name appearing only in an email body (e.g. LinkedIn "top jobs" sections) doesn't pollute another company's panel
-      const q = buildJobEmailQuery(companyTerm, roleTerm);
+      // Strict mode omits JOB_KEYWORDS from the role clause so only emails that
+      // explicitly mention the role term are returned. Without this, the OR JOB_KEYWORDS
+      // branch catches unrelated emails from other roles at the same company, since
+      // those emails match `from:<company>` and contain phrases like "your application".
+      // ATS confirmation emails still appear because most ATS platforms (e.g. Workday)
+      // include the role name in the subject even when sent from a third-party domain.
+      const q = buildJobEmailQuery(companyTerm, roleTerm, { strict: true });
       const list = await gmailApiFetch(
         `users/me/threads?q=${encodeURIComponent(q)}&maxResults=50`, access);
       await Promise.all((list.threads || []).map(async ({ id }) => {
