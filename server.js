@@ -17,7 +17,7 @@ const {
 const {
   fetchGmailApps, mergeGmailIntoNotion, enrichEmailDates,
   roleBodyKeywords, cleanCompanyTerm, roleSearchTerm, buildJobEmailQuery,
-  extractEmailBody, emailMatchesRole, localDateStr, emailBodyToHtml,
+  extractEmailBody, emailMatchesRole, emailBelongsToRole, localDateStr, emailBodyToHtml,
 } = require('./lib/email');
 const {
   htmlToNotionBlocks, plainTextToNotionBlocks, blocksToHtml,
@@ -402,10 +402,17 @@ app.get('/api/tracker/detail', async (req, res) => {
 
       const { role } = req.query;
       const roleKeywords = roleBodyKeywords(role);
+      const otherRoles = [].concat(req.query.otherRoles || []).filter(Boolean);
+      const competingKeywordSets = otherRoles.map(roleBodyKeywords).filter(kws => kws.length > 0);
       const companyTerm = cleanCompanyTerm(company);
       const roleTerm = roleSearchTerm(role);
-      // Use subject: so a company name appearing only in an email body (e.g. LinkedIn "top jobs" sections) doesn't pollute another company's panel
-      const q = buildJobEmailQuery(companyTerm, roleTerm);
+      // Strict mode omits JOB_KEYWORDS from the role clause so only emails that
+      // explicitly mention the role term are returned. Without this, the OR JOB_KEYWORDS
+      // branch catches unrelated emails from other roles at the same company, since
+      // those emails match `from:<company>` and contain phrases like "your application".
+      // ATS confirmation emails still appear because most ATS platforms (e.g. Workday)
+      // include the role name in the subject even when sent from a third-party domain.
+      const q = buildJobEmailQuery(companyTerm, roleTerm, { strict: true });
       const list = await gmailApiFetch(
         `users/me/threads?q=${encodeURIComponent(q)}&maxResults=50`, access);
       await Promise.all((list.threads || []).map(async ({ id }) => {
@@ -424,7 +431,15 @@ app.get('/api/tracker/detail', async (req, res) => {
                   ? bodyResult.content.replace(/<[^>]+>/g, ' ')
                   : bodyResult.content)
               : (msg.snippet || '');
-            if (!emailMatchesRole(subj + ' ' + bodyText, roleKeywords)) continue;
+            const fullText = subj + ' ' + bodyText;
+            if (!emailMatchesRole(fullText, roleKeywords)) continue;
+            // Exclude if email clearly belongs to a competing role but NOT the current role.
+            // Skip this guard when the current app has no role keywords — empty roleKeywords
+            // makes emailBelongsToRole always return false, which would exclude every email
+            // that matches any competing role even though the current app has no filter to apply.
+            if (roleKeywords.length && competingKeywordSets.some(kws =>
+              emailBelongsToRole(fullText, kws) && !emailBelongsToRole(fullText, roleKeywords)
+            )) continue;
             const isCalendar = /calendar-notification@google\.com|calendly\.com|@calendly\b/i.test(from) ||
               /\.ics|calendar invite|interview.*scheduled|scheduled.*interview|^appointment booked|^invitation from (an? )?unknown sender|^invitation for .*(call|meeting|interview)|^reminder:.*(call|meeting|interview|@)/i.test(subj);
             result.emails.push({
