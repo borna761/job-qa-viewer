@@ -113,8 +113,44 @@ function notionPageUrl(pageId) {
   return `https://app.notion.com/native/p/${pageId.replace(/-/g, '')}`;
 }
 
-function renderTracked(entry) {
+// Other tracked applications at the same company — reuses the entries cached
+// from /api/tracker/urls (background.js already fetched these), so this
+// needs no extra request. excludeUrl drops the entry currently being shown
+// (viewing an already-tracked job shouldn't list itself as an "other" one).
+// Compared via normalizeUrl, not exact string equality — two saves of the
+// same posting can differ superficially (trailing slash, tracking params)
+// while still being the same application, exactly what normalizeUrl is
+// already used elsewhere in this file to collapse.
+const OTHER_APPS_MAX = 4;
+function otherAppsAtCompany(entries, company, excludeUrl) {
+  if (!company) return [];
+  const c = company.toLowerCase();
+  const excludeKey = normalizeUrl(excludeUrl);
+  return entries.filter(e =>
+    e.company && e.company.toLowerCase() === c && normalizeUrl(e.url) !== excludeKey);
+}
+
+function otherAppsHtml(company, others) {
+  if (!others.length) return '';
+  const shown = others.slice(0, OTHER_APPS_MAX);
+  const extra = others.length - shown.length;
+  return `
+    <div class="other-apps">
+      <div class="other-apps-title">Also at ${esc(company)}</div>
+      ${shown.map(e => `
+        <div class="other-apps-item">
+          <span class="other-apps-role">${esc(e.role || '(no role)')}</span>
+          ${stageBadge(e.stage)}
+        </div>
+      `).join('')}
+      ${extra > 0 ? `<div class="other-apps-more">+${extra} more</div>` : ''}
+    </div>
+  `;
+}
+
+function renderTracked(entry, entries) {
   const root = document.getElementById('root');
+  const others = otherAppsAtCompany(entries, entry.company, entry.url);
   root.innerHTML = `
     <div class="company">${esc(entry.company)}</div>
     ${entry.role ? `<div class="role">${esc(entry.role)}</div>` : ''}
@@ -122,6 +158,7 @@ function renderTracked(entry) {
       ${stageBadge(entry.stage)}
       <span class="date">${formatDate(entry.lastUpdate)}</span>
     </div>
+    ${otherAppsHtml(entry.company, others)}
     <div class="btn-row">
       <button class="open-btn" id="open-tracker">Open Tracker</button>
       ${entry.notionPageId ? `<button class="notion-btn" id="open-notion">Notion</button>` : ''}
@@ -193,10 +230,11 @@ function renderTracked(entry) {
     });
 }
 
-function renderSaveForm(tabUrl, { role, company }) {
+function renderSaveForm(tabUrl, { role, company }, entries) {
   const root = document.getElementById('root');
   root.innerHTML = `
     <div class="save-title">Save to Job Tracker</div>
+    <div id="other-apps-container">${otherAppsHtml(company, otherAppsAtCompany(entries, company, tabUrl))}</div>
     <div class="field">
       <label>Role</label>
       <input id="inp-role" type="text" value="${esc(role)}">
@@ -214,6 +252,17 @@ function renderSaveForm(tabUrl, { role, company }) {
     <button class="save-btn" id="save-btn">Save to Notion</button>
     <div class="status" id="save-status"></div>
   `;
+
+  // Keep the "Also at X" box in sync as the user edits Company — it's
+  // computed from the auto-detected value at render time, which can be
+  // wrong or blank; without this it would silently go stale the moment
+  // someone corrects the field.
+  const companyInput = document.getElementById('inp-company');
+  const otherAppsContainer = document.getElementById('other-apps-container');
+  companyInput.addEventListener('input', () => {
+    const liveCompany = companyInput.value.trim();
+    otherAppsContainer.innerHTML = otherAppsHtml(liveCompany, otherAppsAtCompany(entries, liveCompany, tabUrl));
+  });
 
   document.getElementById('save-btn').addEventListener('click', async () => {
     const btn = document.getElementById('save-btn');
@@ -393,7 +442,7 @@ async function init() {
     const match = key ? entries.find(e => normalizeUrl(e.url) === key) : null;
 
     if (match) {
-      renderTracked(match);
+      renderTracked(match, entries);
     } else {
       let info = extractJobInfo(tab.title || '', tab.url);
       try {
@@ -404,7 +453,7 @@ async function init() {
         const jsonLd = result?.result;
         if (jsonLd) info = { role: capitalizeWords(jsonLd.role), company: jsonLd.company };
       } catch { /* scripting not available on this page — keep the title-based guess */ }
-      renderSaveForm(tab.url, info);
+      renderSaveForm(tab.url, info, entries);
     }
   } catch (e) {
     document.getElementById('root').innerHTML = '<p class="loading" style="padding:14px">Error: ' + e.message + '</p>';
