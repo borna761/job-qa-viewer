@@ -25,11 +25,60 @@ function normalizeUrl(raw) {
   } catch { return null; }
 }
 
+// ---- Best-effort company guess for untracked postings ----
+//
+// Used only for the "you have other applications at this company" icon
+// hint — deliberately simpler than popup.js's extractJobInfo: no JobPosting
+// JSON-LD here, since reading it needs scripting.executeScript, which needs
+// a user gesture background.js doesn't have. tab.title/tab.url are already
+// available from the "tabs" permission on every tab, gesture or not, so this
+// is what's cheaply available. A soft signal, not authoritative — the
+// popup's own richer detection is what actually runs once it's opened.
+function guessCompanyFromTab(title, tabUrl) {
+  try {
+    const u = new URL(tabUrl);
+    if (/\/job\/(?:[^/]+\/)?[^/]+?(?:_[Rr]\d+)?(?:\/|$)/.test(u.pathname)) {
+      // Take the label just before the TLD, not always the first label —
+      // "careers.evercommerce.com" is the company's own domain but the
+      // company name is "evercommerce", not "careers".
+      const parts = u.hostname.replace(/^www\./, '').split('.');
+      return parts.length >= 2 ? parts[parts.length - 2] : parts[0];
+    }
+  } catch {}
+  if (!title) return null;
+  const t = title.replace(/\s*[-|]\s*(LinkedIn|Greenhouse|Lever|Workday|Indeed|Glassdoor|Jobs|Careers)[^|]*$/i, '').trim();
+  const atWordMatch = t.match(/^(.+?)\s+at\s+(.+)$/i);
+  if (atWordMatch) return atWordMatch[2].trim();
+  // "Role @ Company" — the actual format Ashby-hosted job page titles use.
+  const atSymbolMatch = t.match(/^(.+?)\s*@\s*(.+)$/);
+  if (atSymbolMatch) return atSymbolMatch[2].trim();
+  const pipeMatch = t.match(/^(.+?)\s*\|\s*(.+)$/);
+  if (pipeMatch) return pipeMatch[2].trim();
+  return null;
+}
+
+// Loose match, not exact: a title/hostname-derived guess ("floatfinancial")
+// often won't equal the company's saved display name ("Float") exactly, so
+// this is a substring check in either direction. A minimum length guard
+// avoids trivial false positives from very short names.
+function companyNamesLooselyMatch(a, b) {
+  if (!a || !b) return false;
+  const na = a.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const nb = b.toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (!na || !nb) return false;
+  const [shorter, longer] = na.length <= nb.length ? [na, nb] : [nb, na];
+  if (shorter.length < 3) return false;
+  return longer.includes(shorter);
+}
+
 // ---- Icon generation (lazy, fully guarded) ----
 
 const ICON_CACHE = new Map();
 
-function makeFaviconImageData(bgColor = '#1a1a2e', opacity = 1) {
+// badge=true draws a small filled dot in the top-right corner — used to hint
+// "you've applied elsewhere at this company" on an untracked posting, without
+// needing a whole new set of hand-made icon assets per stage.
+function makeFaviconImageData(bgColor = '#1a1a2e', opacity = 1, badge = false) {
   try {
     const sizes = [16, 32, 128];
     const results = {};
@@ -54,6 +103,14 @@ function makeFaviconImageData(bgColor = '#1a1a2e', opacity = 1) {
       [[9, 13, 23, 13], [9, 17, 18, 17], [9, 21, 20, 21]].forEach(([x1, y1, x2, y2]) => {
         ctx.beginPath(); ctx.moveTo(x1 * sc, y1 * sc); ctx.lineTo(x2 * sc, y2 * sc); ctx.stroke();
       });
+      if (badge) {
+        // Dark ring behind the dot keeps it legible against light toolbars too.
+        const r = 6.5 * sc, cx = 25 * sc, cy = 7 * sc;
+        ctx.fillStyle = '#1a1a2e';
+        ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#f59e0b';
+        ctx.beginPath(); ctx.arc(cx, cy, r - 2 * sc, 0, Math.PI * 2); ctx.fill();
+      }
       results[size] = ctx.getImageData(0, 0, size, size);
     }
     return results;
@@ -62,9 +119,12 @@ function makeFaviconImageData(bgColor = '#1a1a2e', opacity = 1) {
 
 let DEFAULT_ICON = null;
 let OFFLINE_ICON = null;
+let COMPANY_HISTORY_ICON = null;
 
 function defaultIcon() { return DEFAULT_ICON ??= makeFaviconImageData(); }
 function offlineIcon() { return OFFLINE_ICON ??= makeFaviconImageData('#6b7280', 0.35); }
+// Shown on an untracked posting when its company has other tracked applications.
+function companyHistoryIcon() { return COMPANY_HISTORY_ICON ??= makeFaviconImageData('#1a1a2e', 1, true); }
 
 function iconForStage(stage) {
   if (!ICON_CACHE.has(stage))
@@ -126,7 +186,7 @@ async function fetchUrlMap(force = false) {
     }
     try {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (tab) await updateTab(tab.id, tab.url);
+      if (tab) await updateTab(tab.id, tab.url, tab.title);
     } catch {}
   })();
   return fetchInFlight;
@@ -134,7 +194,7 @@ async function fetchUrlMap(force = false) {
 
 // ---- Update a single tab ----
 
-async function updateTab(tabId, url) {
+async function updateTab(tabId, url, title) {
   try {
     await ensureMap();
     if (urlMap.size === 0) await fetchUrlMap();
@@ -156,6 +216,18 @@ async function updateTab(tabId, url) {
     if (match) {
       setIcon(tabId, iconForStage(match.stage));
       setTitle({ tabId, title: `${match.company} — ${match.stage}` });
+      return;
+    }
+
+    // Not this exact posting — but flag it if the company itself has other
+    // tracked applications, so that's visible without opening the popup.
+    const guessedCompany = guessCompanyFromTab(title, url);
+    const companyMatch = guessedCompany && [...urlMap.values()]
+      .some(v => v.company && companyNamesLooselyMatch(guessedCompany, v.company));
+
+    if (companyMatch) {
+      setIcon(tabId, companyHistoryIcon());
+      setTitle({ tabId, title: 'Job Tracker - other applications tracked at this company' });
     } else {
       setIcon(tabId, defaultIcon());
       setTitle({ tabId, title: 'Job Tracker - not applied' });
@@ -177,12 +249,12 @@ chrome.alarms.onAlarm.addListener(alarm => {
 chrome.tabs.onActivated.addListener(async ({ tabId }) => {
   try {
     const tab = await chrome.tabs.get(tabId);
-    await updateTab(tabId, tab.url);
+    await updateTab(tabId, tab.url, tab.title);
   } catch {}
 });
 
 chrome.tabs.onUpdated.addListener(async (tabId, change, tab) => {
-  if (change.url || change.status === 'complete') await updateTab(tabId, tab.url);
+  if (change.url || change.status === 'complete') await updateTab(tabId, tab.url, tab.title);
 });
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
