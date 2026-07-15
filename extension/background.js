@@ -104,12 +104,16 @@ function makeFaviconImageData(bgColor = '#1a1a2e', opacity = 1, badge = false) {
         ctx.beginPath(); ctx.moveTo(x1 * sc, y1 * sc); ctx.lineTo(x2 * sc, y2 * sc); ctx.stroke();
       });
       if (badge) {
-        // Dark ring behind the dot keeps it legible against light toolbars too.
-        const r = 6.5 * sc, cx = 25 * sc, cy = 7 * sc;
+        // Dark ring behind the dot keeps it legible against light toolbars —
+        // and against the orange "Turned Down" stage color specifically,
+        // which sits close enough to the badge's amber that a thin ring
+        // wasn't enough separation; verified visually across all 6 stage
+        // colors before landing on this thickness.
+        const r = 7 * sc, cx = 25 * sc, cy = 7 * sc;
         ctx.fillStyle = '#1a1a2e';
         ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
         ctx.fillStyle = '#f59e0b';
-        ctx.beginPath(); ctx.arc(cx, cy, r - 2 * sc, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(cx, cy, r - 3 * sc, 0, Math.PI * 2); ctx.fill();
       }
       results[size] = ctx.getImageData(0, 0, size, size);
     }
@@ -126,10 +130,14 @@ function offlineIcon() { return OFFLINE_ICON ??= makeFaviconImageData('#6b7280',
 // Shown on an untracked posting when its company has other tracked applications.
 function companyHistoryIcon() { return COMPANY_HISTORY_ICON ??= makeFaviconImageData('#1a1a2e', 1, true); }
 
-function iconForStage(stage) {
-  if (!ICON_CACHE.has(stage))
-    ICON_CACHE.set(stage, makeFaviconImageData(STAGE_COLOR[stage] || '#6b7280'));
-  return ICON_CACHE.get(stage);
+// badge=true adds the same "other applications at this company" dot to a
+// tracked entry's own stage-colored icon — a tracked page shouldn't hide that
+// context just because it already has a color of its own.
+function iconForStage(stage, badge = false) {
+  const cacheKey = badge ? `${stage}::badge` : stage;
+  if (!ICON_CACHE.has(cacheKey))
+    ICON_CACHE.set(cacheKey, makeFaviconImageData(STAGE_COLOR[stage] || '#6b7280', 1, badge));
+  return ICON_CACHE.get(cacheKey);
 }
 
 function setIcon(tabId, imageData) {
@@ -214,8 +222,17 @@ async function updateTab(tabId, url, title) {
     const match = key ? urlMap.get(key) : null;
 
     if (match) {
-      setIcon(tabId, iconForStage(match.stage));
-      setTitle({ tabId, title: `${match.company} — ${match.stage}` });
+      // Other tracked entries at the same company, excluding this one. Both
+      // sides here are real saved company names (not a title/URL guess), so
+      // this is an exact case-insensitive comparison, unlike the loose match
+      // used below for the untracked case.
+      const matchCompany = match.company.toLowerCase();
+      const hasOtherAtCompany = [...urlMap.entries()]
+        .some(([k, v]) => k !== key && v.company && v.company.toLowerCase() === matchCompany);
+      setIcon(tabId, iconForStage(match.stage, hasOtherAtCompany));
+      setTitle({ tabId, title: hasOtherAtCompany
+        ? `${match.company} — ${match.stage} (other applications tracked too)`
+        : `${match.company} — ${match.stage}` });
       return;
     }
 
