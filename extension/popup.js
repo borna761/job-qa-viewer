@@ -117,11 +117,17 @@ function notionPageUrl(pageId) {
 // from /api/tracker/urls (background.js already fetched these), so this
 // needs no extra request. excludeUrl drops the entry currently being shown
 // (viewing an already-tracked job shouldn't list itself as an "other" one).
+// Compared via normalizeUrl, not exact string equality — two saves of the
+// same posting can differ superficially (trailing slash, tracking params)
+// while still being the same application, exactly what normalizeUrl is
+// already used elsewhere in this file to collapse.
 const OTHER_APPS_MAX = 4;
 function otherAppsAtCompany(entries, company, excludeUrl) {
   if (!company) return [];
   const c = company.toLowerCase();
-  return entries.filter(e => e.company && e.company.toLowerCase() === c && e.url !== excludeUrl);
+  const excludeKey = normalizeUrl(excludeUrl);
+  return entries.filter(e =>
+    e.company && e.company.toLowerCase() === c && normalizeUrl(e.url) !== excludeKey);
 }
 
 function otherAppsHtml(company, others) {
@@ -226,10 +232,9 @@ function renderTracked(entry, entries) {
 
 function renderSaveForm(tabUrl, { role, company }, entries) {
   const root = document.getElementById('root');
-  const others = otherAppsAtCompany(entries, company, tabUrl);
   root.innerHTML = `
     <div class="save-title">Save to Job Tracker</div>
-    ${otherAppsHtml(company, others)}
+    <div id="other-apps-container">${otherAppsHtml(company, otherAppsAtCompany(entries, company, tabUrl))}</div>
     <div class="field">
       <label>Role</label>
       <input id="inp-role" type="text" value="${esc(role)}">
@@ -247,6 +252,17 @@ function renderSaveForm(tabUrl, { role, company }, entries) {
     <button class="save-btn" id="save-btn">Save to Notion</button>
     <div class="status" id="save-status"></div>
   `;
+
+  // Keep the "Also at X" box in sync as the user edits Company — it's
+  // computed from the auto-detected value at render time, which can be
+  // wrong or blank; without this it would silently go stale the moment
+  // someone corrects the field.
+  const companyInput = document.getElementById('inp-company');
+  const otherAppsContainer = document.getElementById('other-apps-container');
+  companyInput.addEventListener('input', () => {
+    const liveCompany = companyInput.value.trim();
+    otherAppsContainer.innerHTML = otherAppsHtml(liveCompany, otherAppsAtCompany(entries, liveCompany, tabUrl));
+  });
 
   document.getElementById('save-btn').addEventListener('click', async () => {
     const btn = document.getElementById('save-btn');
