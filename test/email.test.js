@@ -134,6 +134,40 @@ test('mergeGmailIntoNotion advances Interested to Applied', () => {
   assert.equal(merged[0].stage, 'Applied');
 });
 
+test('mergeGmailIntoNotion revives a Stale entry when Gmail confidently detects an interview', () => {
+  // 'Stale' is a manual Notion bucket, not something classifyThread ever
+  // outputs — a real "your interview is scheduled" match is strong enough
+  // evidence that the manual bucketing is out of date and should be revived.
+  const merged = mergeGmailIntoNotion(
+    [{ company: 'Fabrikam', role: null, stage: 'Stale', lastUpdate: null }],
+    [{ company: 'Fabrikam', stage: 'Interviews', lastUpdate: '2026-04-01T00:00:00.000Z' }],
+  );
+  assert.equal(merged[0].stage, 'Interviews');
+});
+
+test('mergeGmailIntoNotion revives a Turned Down entry when Gmail confidently detects a rejection', () => {
+  const merged = mergeGmailIntoNotion(
+    [{ company: 'Globex', role: null, stage: 'Turned Down', lastUpdate: null }],
+    [{ company: 'Globex', stage: 'Rejected', lastUpdate: '2026-04-01T00:00:00.000Z' }],
+  );
+  assert.equal(merged[0].stage, 'Rejected');
+});
+
+test('mergeGmailIntoNotion does not let a weak Applied default overwrite Stale or Turned Down', () => {
+  const merged = mergeGmailIntoNotion(
+    [
+      { company: 'Fabrikam', role: null, stage: 'Stale', lastUpdate: null },
+      { company: 'Globex', role: null, stage: 'Turned Down', lastUpdate: null },
+    ],
+    [
+      { company: 'Fabrikam', stage: 'Applied', lastUpdate: '2026-04-01T00:00:00.000Z' },
+      { company: 'Globex', stage: 'Applied', lastUpdate: '2026-04-01T00:00:00.000Z' },
+    ],
+  );
+  assert.equal(merged[0].stage, 'Stale');
+  assert.equal(merged[1].stage, 'Turned Down');
+});
+
 test('sanitizeEmailHtml strips scripts, inline handlers, and javascript: URLs', () => {
   assert.equal(sanitizeEmailHtml('<script>alert(1)</script>hello'), 'hello');
   assert.doesNotMatch(sanitizeEmailHtml('<p onclick="steal()">hi</p>'), /onclick/);
