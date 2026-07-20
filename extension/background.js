@@ -37,11 +37,30 @@ function normalizeUrl(raw) {
 function guessCompanyFromTab(title, tabUrl) {
   try {
     const u = new URL(tabUrl);
+    const host = u.hostname.replace(/^www\./, '');
+
+    // Hosted ATS boards that put the company slug directly in the path —
+    // e.g. jobs.lever.co/acme/…, jobs.ashbyhq.com/acme/…,
+    // boards.greenhouse.io/acme/jobs/1234 (or job-boards.greenhouse.io).
+    // These never match the /job/ pattern below (Lever/Ashby have no "job"
+    // segment at all, and Greenhouse uses "/jobs/" — plural, so it doesn't
+    // match "/job/" either), so without this they fell through to the much
+    // less reliable title-guessing and typically returned no company at all.
+    if (/(^|\.)(lever\.co|ashbyhq\.com|greenhouse\.io)$/.test(host)) {
+      const slug = u.pathname.split('/').filter(Boolean)[0];
+      if (slug) return slug;
+    }
+
+    // Workday tenants (acme.myworkday.com): company is the first hostname
+    // label, not the label before the TLD — unlike the company-owned-domain
+    // case below, there's no "careers." subdomain prefix to skip past.
+    if (host.endsWith('myworkday.com')) return host.split('.')[0];
+
     if (/\/job\/(?:[^/]+\/)?[^/]+?(?:_[Rr]\d+)?(?:\/|$)/.test(u.pathname)) {
       // Take the label just before the TLD, not always the first label —
       // "careers.zenith.com" is the company's own domain but the
       // company name is "zenith", not "careers".
-      const parts = u.hostname.replace(/^www\./, '').split('.');
+      const parts = host.split('.');
       return parts.length >= 2 ? parts[parts.length - 2] : parts[0];
     }
   } catch {}
