@@ -101,6 +101,73 @@ test('mergeGmailIntoNotion advances the primary stage/date from Gmail', () => {
   assert.equal(merged[0].lastUpdate, '2026-02-01T00:00:00.000Z');
 });
 
+test('mergeGmailIntoNotion never downgrades Interviews back to Applied', () => {
+  // Regression: classifyThread only recognizes narrow interview-scheduling
+  // phrasing ("...scheduled/invitation/confirmed/link"); a thread like
+  // "Thank you for your interview with X" or a reschedule/cancellation
+  // notice falls through to the Applied default despite clearly being
+  // further along than a first application. That default classification
+  // must never overwrite a genuinely-set Interviews stage.
+  const merged = mergeGmailIntoNotion(
+    [{ company: 'Northwind', role: null, stage: 'Interviews', lastUpdate: '2026-01-01T00:00:00.000Z' }],
+    [{ company: 'Northwind', stage: 'Applied', lastUpdate: '2026-02-01T00:00:00.000Z' }],
+  );
+  assert.equal(merged[0].stage, 'Interviews');
+  // The date can still advance even when the stage doesn't — a later Applied-
+  // classified email is still real evidence of recent activity on the thread.
+  assert.equal(merged[0].lastUpdate, '2026-02-01T00:00:00.000Z');
+});
+
+test('mergeGmailIntoNotion still advances Interviews to Rejected (catches a missed rejection)', () => {
+  const merged = mergeGmailIntoNotion(
+    [{ company: 'Contoso', role: null, stage: 'Interviews', lastUpdate: null }],
+    [{ company: 'Contoso', stage: 'Rejected', lastUpdate: '2026-03-01T00:00:00.000Z' }],
+  );
+  assert.equal(merged[0].stage, 'Rejected');
+});
+
+test('mergeGmailIntoNotion advances Interested to Applied', () => {
+  const merged = mergeGmailIntoNotion(
+    [{ company: 'Acme', role: null, stage: 'Interested', lastUpdate: null }],
+    [{ company: 'Acme', stage: 'Applied', lastUpdate: '2026-01-15T00:00:00.000Z' }],
+  );
+  assert.equal(merged[0].stage, 'Applied');
+});
+
+test('mergeGmailIntoNotion revives a Stale entry when Gmail confidently detects an interview', () => {
+  // 'Stale' is a manual Notion bucket, not something classifyThread ever
+  // outputs — a real "your interview is scheduled" match is strong enough
+  // evidence that the manual bucketing is out of date and should be revived.
+  const merged = mergeGmailIntoNotion(
+    [{ company: 'Fabrikam', role: null, stage: 'Stale', lastUpdate: null }],
+    [{ company: 'Fabrikam', stage: 'Interviews', lastUpdate: '2026-04-01T00:00:00.000Z' }],
+  );
+  assert.equal(merged[0].stage, 'Interviews');
+});
+
+test('mergeGmailIntoNotion revives a Turned Down entry when Gmail confidently detects a rejection', () => {
+  const merged = mergeGmailIntoNotion(
+    [{ company: 'Globex', role: null, stage: 'Turned Down', lastUpdate: null }],
+    [{ company: 'Globex', stage: 'Rejected', lastUpdate: '2026-04-01T00:00:00.000Z' }],
+  );
+  assert.equal(merged[0].stage, 'Rejected');
+});
+
+test('mergeGmailIntoNotion does not let a weak Applied default overwrite Stale or Turned Down', () => {
+  const merged = mergeGmailIntoNotion(
+    [
+      { company: 'Fabrikam', role: null, stage: 'Stale', lastUpdate: null },
+      { company: 'Globex', role: null, stage: 'Turned Down', lastUpdate: null },
+    ],
+    [
+      { company: 'Fabrikam', stage: 'Applied', lastUpdate: '2026-04-01T00:00:00.000Z' },
+      { company: 'Globex', stage: 'Applied', lastUpdate: '2026-04-01T00:00:00.000Z' },
+    ],
+  );
+  assert.equal(merged[0].stage, 'Stale');
+  assert.equal(merged[1].stage, 'Turned Down');
+});
+
 test('sanitizeEmailHtml strips scripts, inline handlers, and javascript: URLs', () => {
   assert.equal(sanitizeEmailHtml('<script>alert(1)</script>hello'), 'hello');
   assert.doesNotMatch(sanitizeEmailHtml('<p onclick="steal()">hi</p>'), /onclick/);
