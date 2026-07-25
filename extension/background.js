@@ -51,10 +51,12 @@ function guessCompanyFromTab(title, tabUrl) {
       if (slug) return slug;
     }
 
-    // Workday tenants (acme.myworkday.com): company is the first hostname
-    // label, not the label before the TLD — unlike the company-owned-domain
-    // case below, there's no "careers." subdomain prefix to skip past.
-    if (host.endsWith('myworkday.com')) return host.split('.')[0];
+    // Workday tenants — acme.myworkdayjobs.com (the real-world form, often
+    // with a region label too: acme.wd1.myworkdayjobs.com) or the shorter
+    // acme.myworkday.com. Either way company is the first hostname label,
+    // not the label before the TLD — unlike the company-owned-domain case
+    // below, there's no "careers." subdomain prefix to skip past.
+    if (host.endsWith('myworkdayjobs.com') || host.endsWith('myworkday.com')) return host.split('.')[0];
 
     if (/\/job\/(?:[^/]+\/)?[^/]+?(?:_[Rr]\d+)?(?:\/|$)/.test(u.pathname)) {
       // Take the label just before the TLD, not always the first label —

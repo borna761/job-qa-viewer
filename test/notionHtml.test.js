@@ -138,6 +138,9 @@ test('isAllowedEmbeddedJobUrl allows known ATS hosts and their subdomains over h
   assert.equal(isAllowedEmbeddedJobUrl('https://boards.greenhouse.io/acme'), true);
   assert.equal(isAllowedEmbeddedJobUrl('https://jobs.lever.co/acme/xyz'), true);
   assert.equal(isAllowedEmbeddedJobUrl('https://acme.myworkday.com/careers/job/1'), true);
+  // The real-world Workday form: a region label (wd1/wd5/...) between the
+  // tenant and myworkdayjobs.com, plus a locale prefix in the path.
+  assert.equal(isAllowedEmbeddedJobUrl('https://acme.wd1.myworkdayjobs.com/en-US/acme_careers/job/Remote/Product-Manager_R123'), true);
 });
 
 test('isAllowedEmbeddedJobUrl rejects lookalike hosts, non-https, and malformed URLs', () => {
