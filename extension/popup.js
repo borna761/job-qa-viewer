@@ -82,6 +82,9 @@ function readJobPostingJsonLd() {
 // breadcrumb ("Job postings | Role | Location | Company | site.com") — the
 // JSON-LD path above is preferred whenever it's available.
 function extractJobInfo(pageTitle, tabUrl) {
+  let host = null;
+  try { host = new URL(tabUrl).hostname.replace(/^www\./, ''); } catch {}
+
   try {
     const u = new URL(tabUrl);
     const m = u.pathname.match(/\/job\/(?:[^/]+\/)?([^/]+?)(?:_[Rr]\d+)?(?:\/|$)/);
@@ -110,12 +113,17 @@ function extractJobInfo(pageTitle, tabUrl) {
   if (pipeMatch) return { role: pipeMatch[1].trim(), company: pipeMatch[2].trim() };
 
   // "Role - Company" or "Role - Company - Location" — Indeed's own title
-  // convention. Splits on the first " - " only: for a 3-part title the
-  // location ends up folded into company rather than parsed out separately
-  // (there's no reliable signal to draw that boundary), but that's still
-  // far better than the empty company this used to fall through to.
-  const dashMatch = title.match(/^(.+?)\s+-\s+(.+)$/);
-  if (dashMatch) return { role: dashMatch[1].trim(), company: dashMatch[2].trim() };
+  // convention. Gated to Indeed specifically: unlike "at"/"|", a bare " - "
+  // is common in all kinds of unrelated page titles, so applying this on
+  // every tab would fabricate a bogus company guess for any non-job page
+  // the popup happens to be opened on. Splits on the first " - " only: for
+  // a 3-part title the location ends up folded into company rather than
+  // parsed out separately (there's no reliable signal to draw that
+  // boundary), but that's still far better than an empty company.
+  if (host && /(^|\.)indeed\.com$/.test(host)) {
+    const dashMatch = title.match(/^(.+?)\s+-\s+(.+)$/);
+    if (dashMatch) return { role: dashMatch[1].trim(), company: dashMatch[2].trim() };
+  }
 
   return { role: title, company: '' };
 }
