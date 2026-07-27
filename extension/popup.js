@@ -331,7 +331,7 @@ function renderSaveForm(tabUrl, { role, company }, entries) {
           // attribute (always readable), and it's a real, directly-fetchable
           // page the server can extract from independently.
           function findEmbeddedAtsIframeUrl() {
-            const ATS_HOSTS = ['ashbyhq.com', 'greenhouse.io', 'lever.co', 'myworkday.com'];
+            const ATS_HOSTS = ['ashbyhq.com', 'greenhouse.io', 'lever.co', 'myworkday.com', 'myworkdayjobs.com'];
             for (const f of document.querySelectorAll('iframe[src]')) {
               try {
                 const host = new URL(f.src, location.href).hostname;
