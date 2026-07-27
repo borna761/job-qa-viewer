@@ -60,6 +60,10 @@ function guessCompanyFromTab(title, tabUrl) {
     // .endsWith() would also match a lookalike like "evilmyworkdayjobs.com".
     if (/(^|\.)(myworkdayjobs\.com|myworkday\.com)$/.test(host)) return host.split('.')[0];
 
+    // Loxo tenants — acme.app.loxo.co: same tenant-subdomain shape as
+    // Workday above, so the same "first label" extraction applies.
+    if (/(^|\.)app\.loxo\.co$/.test(host)) return host.split('.')[0];
+
     if (/\/job\/(?:[^/]+\/)?[^/]+?(?:_[Rr]\d+)?(?:\/|$)/.test(u.pathname)) {
       // Take the label just before the TLD, not always the first label —
       // "careers.zenith.com" is the company's own domain but the
