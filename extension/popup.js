@@ -85,7 +85,14 @@ function extractJobInfo(pageTitle, tabUrl) {
   try {
     const u = new URL(tabUrl);
     const m = u.pathname.match(/\/job\/(?:[^/]+\/)?([^/]+?)(?:_[Rr]\d+)?(?:\/|$)/);
-    if (m) {
+    // This heuristic assumes the segment after /job/ is a human-readable
+    // slug (Workday-style: "Product-Manager"). Some ATS platforms (Loxo,
+    // e.g. acme.app.loxo.co/job/{base64id}) instead put an opaque base64
+    // ID there — titleCase()-ing that produces garbage instead of a real
+    // role. "=" padding is a reliable base64 tell that never appears in
+    // an actual slug, so bail out and fall through to the title-based
+    // match below instead.
+    if (m && !m[1].includes('=')) {
       const role = titleCase(m[1]);
       const company = titleCase(u.hostname.replace(/^www\./, '').split('.')[0]);
       if (role) return { role, company };
