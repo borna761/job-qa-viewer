@@ -35,9 +35,11 @@ function normalizeUrl(raw) {
 // is what's cheaply available. A soft signal, not authoritative — the
 // popup's own richer detection is what actually runs once it's opened.
 function guessCompanyFromTab(title, tabUrl) {
+  let host = null;
+  try { host = new URL(tabUrl).hostname.replace(/^www\./, ''); } catch {}
+
   try {
     const u = new URL(tabUrl);
-    const host = u.hostname.replace(/^www\./, '');
 
     // Hosted ATS boards that put the company slug directly in the path —
     // e.g. jobs.lever.co/acme/…, jobs.ashbyhq.com/acme/…,
@@ -81,6 +83,15 @@ function guessCompanyFromTab(title, tabUrl) {
   if (atSymbolMatch) return atSymbolMatch[2].trim();
   const pipeMatch = t.match(/^(.+?)\s*\|\s*(.+)$/);
   if (pipeMatch) return pipeMatch[2].trim();
+  // "Role - Company[ - Location]" — Indeed's own title convention. Gated to
+  // Indeed specifically: unlike "at"/"@"/"|", a bare " - " is common in all
+  // kinds of unrelated page titles (video titles, news headlines, ...), so
+  // applying this on every tab would fabricate a bogus company guess for
+  // any non-job page with a dash in its title.
+  if (host && /(^|\.)indeed\.com$/.test(host)) {
+    const dashMatch = t.match(/^(.+?)\s+-\s+(.+)$/);
+    if (dashMatch) return dashMatch[2].trim();
+  }
   return null;
 }
 
