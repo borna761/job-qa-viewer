@@ -81,6 +81,9 @@ function guessCompanyFromTab(title, tabUrl) {
   if (atSymbolMatch) return atSymbolMatch[2].trim();
   const pipeMatch = t.match(/^(.+?)\s*\|\s*(.+)$/);
   if (pipeMatch) return pipeMatch[2].trim();
+  // "Role - Company[ - Location]" — Indeed's own title convention.
+  const dashMatch = t.match(/^(.+?)\s+-\s+(.+)$/);
+  if (dashMatch) return dashMatch[2].trim();
   return null;
 }
 

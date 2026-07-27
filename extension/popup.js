@@ -109,6 +109,14 @@ function extractJobInfo(pageTitle, tabUrl) {
   const pipeMatch = title.match(/^(.+?)\s*\|\s*(.+)$/);
   if (pipeMatch) return { role: pipeMatch[1].trim(), company: pipeMatch[2].trim() };
 
+  // "Role - Company" or "Role - Company - Location" — Indeed's own title
+  // convention. Splits on the first " - " only: for a 3-part title the
+  // location ends up folded into company rather than parsed out separately
+  // (there's no reliable signal to draw that boundary), but that's still
+  // far better than the empty company this used to fall through to.
+  const dashMatch = title.match(/^(.+?)\s+-\s+(.+)$/);
+  if (dashMatch) return { role: dashMatch[1].trim(), company: dashMatch[2].trim() };
+
   return { role: title, company: '' };
 }
 
@@ -381,6 +389,17 @@ function renderSaveForm(tabUrl, { role, company }, entries) {
           if (host.includes('jobs.lever.co') || host.includes('lever.co')) {
             const el = document.querySelector('.posting-description, .section-wrapper');
             if (el && el.innerText.trim().length > 200) return targeted(extractClean(el));
+          }
+
+          // ---- Indeed ----
+          // Indeed blocks server-side fetches with a Cloudflare challenge (so
+          // fetchAndExtractBlocks's re-fetch fallback in server.js never sees
+          // real content), which makes a targeted grab here — running in the
+          // user's own already-past-the-challenge browser session — the only
+          // reliable source for the description on this site.
+          if (host.includes('indeed.com')) {
+            const jd = document.querySelector('#jobDescriptionText');
+            if (jd && jd.innerText.trim().length > 200) return targeted(extractClean(jd));
           }
 
           // ---- Workday ----
