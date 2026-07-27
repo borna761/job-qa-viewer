@@ -82,6 +82,9 @@ function readJobPostingJsonLd() {
 // breadcrumb ("Job postings | Role | Location | Company | site.com") — the
 // JSON-LD path above is preferred whenever it's available.
 function extractJobInfo(pageTitle, tabUrl) {
+  let host = null;
+  try { host = new URL(tabUrl).hostname.replace(/^www\./, ''); } catch {}
+
   try {
     const u = new URL(tabUrl);
     const m = u.pathname.match(/\/job\/(?:[^/]+\/)?([^/]+?)(?:_[Rr]\d+)?(?:\/|$)/);
@@ -108,6 +111,19 @@ function extractJobInfo(pageTitle, tabUrl) {
 
   const pipeMatch = title.match(/^(.+?)\s*\|\s*(.+)$/);
   if (pipeMatch) return { role: pipeMatch[1].trim(), company: pipeMatch[2].trim() };
+
+  // "Role - Company" or "Role - Company - Location" — Indeed's own title
+  // convention. Gated to Indeed specifically: unlike "at"/"|", a bare " - "
+  // is common in all kinds of unrelated page titles, so applying this on
+  // every tab would fabricate a bogus company guess for any non-job page
+  // the popup happens to be opened on. Splits on the first " - " only: for
+  // a 3-part title the location ends up folded into company rather than
+  // parsed out separately (there's no reliable signal to draw that
+  // boundary), but that's still far better than an empty company.
+  if (host && /(^|\.)indeed\.com$/.test(host)) {
+    const dashMatch = title.match(/^(.+?)\s+-\s+(.+)$/);
+    if (dashMatch) return { role: dashMatch[1].trim(), company: dashMatch[2].trim() };
+  }
 
   return { role: title, company: '' };
 }
@@ -381,6 +397,17 @@ function renderSaveForm(tabUrl, { role, company }, entries) {
           if (host.includes('jobs.lever.co') || host.includes('lever.co')) {
             const el = document.querySelector('.posting-description, .section-wrapper');
             if (el && el.innerText.trim().length > 200) return targeted(extractClean(el));
+          }
+
+          // ---- Indeed ----
+          // Indeed blocks server-side fetches with a Cloudflare challenge (so
+          // fetchAndExtractBlocks's re-fetch fallback in server.js never sees
+          // real content), which makes a targeted grab here — running in the
+          // user's own already-past-the-challenge browser session — the only
+          // reliable source for the description on this site.
+          if (host.includes('indeed.com')) {
+            const jd = document.querySelector('#jobDescriptionText');
+            if (jd && jd.innerText.trim().length > 200) return targeted(extractClean(jd));
           }
 
           // ---- Workday ----
