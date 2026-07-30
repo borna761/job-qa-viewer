@@ -14,14 +14,7 @@ const SAVE_STAGES = [
   { label: 'Active',      value: 'Active'      },
 ];
 
-function normalizeUrl(raw) {
-  try {
-    const u = new URL(raw);
-    let path = u.pathname.replace(/^\/[a-z]{2}-[a-z]{2}\//i, '/').replace(/\/$/, '');
-    path = path.replace(/\/job\/[^/]+\/(.*_r\d+[^/]*)/i, '/job/$1');
-    return (u.hostname + path).toLowerCase();
-  } catch { return null; }
-}
+// normalizeUrl, parseJobTitleFallback: see shared.js (loaded before this file)
 
 function esc(s) {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -82,9 +75,6 @@ function readJobPostingJsonLd() {
 // breadcrumb ("Job postings | Role | Location | Company | site.com") — the
 // JSON-LD path above is preferred whenever it's available.
 function extractJobInfo(pageTitle, tabUrl) {
-  let host = null;
-  try { host = new URL(tabUrl).hostname.replace(/^www\./, ''); } catch {}
-
   try {
     const u = new URL(tabUrl);
     const m = u.pathname.match(/\/job\/(?:[^/]+\/)?([^/]+?)(?:_[Rr]\d+)?(?:\/|$)/);
@@ -102,39 +92,7 @@ function extractJobInfo(pageTitle, tabUrl) {
     }
   } catch {}
 
-  let title = pageTitle
-    .replace(/\s*[-|]\s*(LinkedIn|Greenhouse|Lever|Workday|Indeed|Glassdoor|Jobs|Careers)[^|]*$/i, '')
-    .trim();
-
-  const atMatch = title.match(/^(.+?)\s+at\s+(.+)$/i);
-  if (atMatch) return { role: atMatch[1].trim(), company: atMatch[2].trim() };
-
-  // "Role @ Company" — the actual format Ashby-hosted job page titles use
-  // (background.js's guessCompanyFromTab already handles this; this was
-  // missing here, so an Ashby posting whose JSON-LD injection hadn't landed
-  // in the DOM yet when the popup ran chrome.scripting.executeScript fell
-  // all the way through to an empty company instead of at least getting a
-  // correct split from the title).
-  const atSymbolMatch = title.match(/^(.+?)\s*@\s*(.+)$/);
-  if (atSymbolMatch) return { role: atSymbolMatch[1].trim(), company: atSymbolMatch[2].trim() };
-
-  const pipeMatch = title.match(/^(.+?)\s*\|\s*(.+)$/);
-  if (pipeMatch) return { role: pipeMatch[1].trim(), company: pipeMatch[2].trim() };
-
-  // "Role - Company" or "Role - Company - Location" — Indeed's own title
-  // convention. Gated to Indeed specifically: unlike "at"/"|", a bare " - "
-  // is common in all kinds of unrelated page titles, so applying this on
-  // every tab would fabricate a bogus company guess for any non-job page
-  // the popup happens to be opened on. Splits on the first " - " only: for
-  // a 3-part title the location ends up folded into company rather than
-  // parsed out separately (there's no reliable signal to draw that
-  // boundary), but that's still far better than an empty company.
-  if (host && /(^|\.)indeed\.com$/.test(host)) {
-    const dashMatch = title.match(/^(.+?)\s+-\s+(.+)$/);
-    if (dashMatch) return { role: dashMatch[1].trim(), company: dashMatch[2].trim() };
-  }
-
-  return { role: title, company: '' };
+  return parseJobTitleFallback(pageTitle, tabUrl);
 }
 
 // app.notion.com/native/p/{id} is Notion's own app-launch bridge page (what
