@@ -109,6 +109,15 @@ function extractJobInfo(pageTitle, tabUrl) {
   const atMatch = title.match(/^(.+?)\s+at\s+(.+)$/i);
   if (atMatch) return { role: atMatch[1].trim(), company: atMatch[2].trim() };
 
+  // "Role @ Company" — the actual format Ashby-hosted job page titles use
+  // (background.js's guessCompanyFromTab already handles this; this was
+  // missing here, so an Ashby posting whose JSON-LD injection hadn't landed
+  // in the DOM yet when the popup ran chrome.scripting.executeScript fell
+  // all the way through to an empty company instead of at least getting a
+  // correct split from the title).
+  const atSymbolMatch = title.match(/^(.+?)\s*@\s*(.+)$/);
+  if (atSymbolMatch) return { role: atSymbolMatch[1].trim(), company: atSymbolMatch[2].trim() };
+
   const pipeMatch = title.match(/^(.+?)\s*\|\s*(.+)$/);
   if (pipeMatch) return { role: pipeMatch[1].trim(), company: pipeMatch[2].trim() };
 
