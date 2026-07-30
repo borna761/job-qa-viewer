@@ -1,12 +1,15 @@
 const API = 'http://localhost:3456';
 
-const STAGE_COLORS = {
-  'Interested':  { bg: '#ecfeff', color: '#0891b2' },
-  'Applied':     { bg: '#dbeafe', color: '#1d4ed8' },
-  'Interviews':  { bg: '#ede9fe', color: '#5b21b6' },
-  'Stale':       { bg: '#f3f4f6', color: '#6b7280' },
-  'Turned Down': { bg: '#fff7ed', color: '#c2410c' },
-  'Rejected':    { bg: '#fee2e2', color: '#b91c1c' },
+// Pastel companion background per stage — pairs with STAGE_COLOR (from
+// shared.js) as the badge's text color. This bg pairing is a popup-only
+// design choice with no toolbar-icon equivalent, so it has no shared source.
+const STAGE_BG = {
+  'Interested':  '#ecfeff',
+  'Applied':     '#dbeafe',
+  'Interviews':  '#ede9fe',
+  'Stale':       '#f3f4f6',
+  'Turned Down': '#fff7ed',
+  'Rejected':    '#fee2e2',
 };
 
 const SAVE_STAGES = [
@@ -14,7 +17,8 @@ const SAVE_STAGES = [
   { label: 'Active',      value: 'Active'      },
 ];
 
-// normalizeUrl, parseJobTitleFallback: see shared.js (loaded before this file)
+// normalizeUrl, parseJobTitleFallback, STAGE_COLOR, KNOWN_ATS_HOSTS: see
+// shared.js (loaded before this file)
 
 function esc(s) {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -27,8 +31,9 @@ function formatDate(d) {
 }
 
 function stageBadge(stage) {
-  const c = STAGE_COLORS[stage] || { bg: '#f3f4f6', color: '#6b7280' };
-  return `<span class="stage-badge" style="background:${c.bg};color:${c.color}">${esc(stage)}</span>`;
+  const bg = STAGE_BG[stage] || '#f3f4f6';
+  const color = STAGE_COLOR[stage] || '#6b7280';
+  return `<span class="stage-badge" style="background:${bg};color:${color}">${esc(stage)}</span>`;
 }
 
 // Capitalize the first letter of each word without altering punctuation —
@@ -280,9 +285,16 @@ function renderSaveForm(tabUrl, { role, company }, entries) {
     try {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       if (!tab) throw new Error('no active tab');
+      // KNOWN_ATS_HOSTS (shared.js) is passed in via args rather than
+      // hardcoded inside func below — args is the sanctioned way to get data
+      // into an injected function without a closure over the outer scope
+      // (which chrome.scripting.executeScript otherwise forbids). Keeps
+      // this list defined in exactly one place in the extension, instead of
+      // a second hardcoded copy buried inside the injected closure.
       const [result] = await chrome.scripting.executeScript({
         target: { tabId: tab.id },
-        func: () => {
+        args: [KNOWN_ATS_HOSTS],
+        func: (atsHosts) => {
           // Clone an element, strip non-content noise, return innerHTML
           function extractClean(el) {
             const clone = el.cloneNode(true);
@@ -321,13 +333,12 @@ function renderSaveForm(tabUrl, { role, company }, entries) {
           // attribute (always readable), and it's a real, directly-fetchable
           // page the server can extract from independently.
           function findEmbeddedAtsIframeUrl() {
-            const ATS_HOSTS = ['ashbyhq.com', 'greenhouse.io', 'lever.co', 'myworkday.com', 'myworkdayjobs.com'];
             for (const f of document.querySelectorAll('iframe[src]')) {
               try {
                 const host = new URL(f.src, location.href).hostname;
                 // Proper subdomain check — host.endsWith(h) alone would also
                 // match a lookalike like "evilashbyhq.com".
-                if (ATS_HOSTS.some(h => host === h || host.endsWith('.' + h))) return f.src;
+                if (atsHosts.some(h => host === h || host.endsWith('.' + h))) return f.src;
               } catch {}
             }
             return null;

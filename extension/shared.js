@@ -3,6 +3,37 @@
 // popup.html) — both load this first. Kept as a classic, non-module script
 // since neither loader uses a bundler.
 
+// ---- Stage colors ----
+// Canonical per-stage color: background.js's toolbar-icon fill uses these
+// directly, popup.js's badge pill uses them as text color (pairing each
+// with its own locally-defined pastel background — that pairing is a
+// popup-only design choice with no icon equivalent, so it stays local).
+// These used to be two independently-chosen sets that agreed on 2 of 6
+// stages and disagreed on the other 4. Kept this (darker/more muted) set
+// as canonical rather than the brighter one background.js used to have:
+// checked as small badge text against popup.js's pastel backgrounds, the
+// brighter set fails WCAG AA's 4.5:1 small-text contrast threshold for 3 of
+// the 4 differing stages (Stale drops to 2.3:1) — it was tuned for solid-
+// fill visibility on toolbar chrome, not text-on-pastel contrast, and
+// darker jewel tones read fine as an icon fill either way.
+const STAGE_COLOR = {
+  'Interested':  '#0891b2',
+  'Applied':     '#1d4ed8',
+  'Interviews':  '#5b21b6',
+  'Stale':       '#6b7280',
+  'Turned Down': '#c2410c',
+  'Rejected':    '#b91c1c',
+};
+
+// ---- Known ATS hosts ----
+// Hosts whose iframe embeds or direct URLs are treated as a real,
+// independently-fetchable job page rather than page chrome. Keep in sync
+// with lib/notionHtml.js's EMBEDDABLE_ATS_HOSTS — that one can't literally
+// share this file (server-side Node vs. extension, no shared module system
+// between them), so it's a manually-kept-parallel list; each file points at
+// the other via comment.
+const KNOWN_ATS_HOSTS = ['ashbyhq.com', 'greenhouse.io', 'lever.co', 'myworkday.com', 'myworkdayjobs.com'];
+
 // ---- URL normalisation ----
 // Used to compare a tab's URL against a saved tracker entry's URL, ignoring
 // superficial differences (a locale path prefix, a trailing slash, Workday's

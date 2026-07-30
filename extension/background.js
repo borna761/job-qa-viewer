@@ -1,16 +1,7 @@
-importScripts('shared.js'); // normalizeUrl, parseJobTitleFallback
+importScripts('shared.js'); // normalizeUrl, parseJobTitleFallback, STAGE_COLOR
 
 const API = 'http://localhost:3456/api/tracker/urls';
 const REFRESH_MINUTES = 5;
-
-const STAGE_COLOR = {
-  'Interested':  '#0891b2',
-  'Applied':     '#1d4ed8',
-  'Interviews':  '#7c3aed',
-  'Stale':       '#9ca3af',
-  'Turned Down': '#ea580c',
-  'Rejected':    '#dc2626',
-};
 
 let urlMap = null;
 let serverOnline = true;
