@@ -32,7 +32,7 @@ const STAGE_COLOR = {
 // share this file (server-side Node vs. extension, no shared module system
 // between them), so it's a manually-kept-parallel list; each file points at
 // the other via comment.
-const KNOWN_ATS_HOSTS = ['ashbyhq.com', 'greenhouse.io', 'lever.co', 'myworkday.com', 'myworkdayjobs.com'];
+const KNOWN_ATS_HOSTS = ['ashbyhq.com', 'greenhouse.io', 'lever.co', 'myworkday.com', 'myworkdayjobs.com', 'icims.com'];
 
 // ---- URL normalisation ----
 // Used to compare a tab's URL against a saved tracker entry's URL, ignoring
