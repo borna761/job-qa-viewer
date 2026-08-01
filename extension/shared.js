@@ -54,9 +54,14 @@ function normalizeUrl(raw) {
 // own comment on guessCompanyFromTab), and popup.js falls back to it when
 // there's no JobPosting JSON-LD or it hasn't loaded into the DOM yet.
 // Always returns {role, company}; company is '' when no pattern matched.
-function parseJobTitleFallback(pageTitle, tabUrl) {
-  let host = null;
-  try { host = new URL(tabUrl).hostname.replace(/^www\./, ''); } catch {}
+// knownHost is optional — pass it when the caller already parsed tabUrl's
+// hostname (background.js does, for its own ATS-host checks) to skip a
+// redundant re-parse here; callers without one (popup.js) can omit it.
+function parseJobTitleFallback(pageTitle, tabUrl, knownHost) {
+  let host = knownHost ?? null;
+  if (host === null) {
+    try { host = new URL(tabUrl).hostname.replace(/^www\./, ''); } catch {}
+  }
 
   const title = (pageTitle || '')
     .replace(/\s*[-|]\s*(LinkedIn|Greenhouse|Lever|Workday|Indeed|Glassdoor|Jobs|Careers)[^|]*$/i, '')

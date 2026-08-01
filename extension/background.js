@@ -56,7 +56,7 @@ function guessCompanyFromTab(title, tabUrl) {
       return parts.length >= 2 ? parts[parts.length - 2] : parts[0];
     }
   } catch {}
-  const { company } = parseJobTitleFallback(title, tabUrl);
+  const { company } = parseJobTitleFallback(title, tabUrl, host);
   return company || null;
 }
 
