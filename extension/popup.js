@@ -1,12 +1,15 @@
 const API = 'http://localhost:3456';
 
-const STAGE_COLORS = {
-  'Interested':  { bg: '#ecfeff', color: '#0891b2' },
-  'Applied':     { bg: '#dbeafe', color: '#1d4ed8' },
-  'Interviews':  { bg: '#ede9fe', color: '#5b21b6' },
-  'Stale':       { bg: '#f3f4f6', color: '#6b7280' },
-  'Turned Down': { bg: '#fff7ed', color: '#c2410c' },
-  'Rejected':    { bg: '#fee2e2', color: '#b91c1c' },
+// Pastel companion background per stage — pairs with STAGE_COLOR (from
+// shared.js) as the badge's text color. This bg pairing is a popup-only
+// design choice with no toolbar-icon equivalent, so it has no shared source.
+const STAGE_BG = {
+  'Interested':  '#ecfeff',
+  'Applied':     '#dbeafe',
+  'Interviews':  '#ede9fe',
+  'Stale':       '#f3f4f6',
+  'Turned Down': '#fff7ed',
+  'Rejected':    '#fee2e2',
 };
 
 const SAVE_STAGES = [
@@ -14,14 +17,8 @@ const SAVE_STAGES = [
   { label: 'Active',      value: 'Active'      },
 ];
 
-function normalizeUrl(raw) {
-  try {
-    const u = new URL(raw);
-    let path = u.pathname.replace(/^\/[a-z]{2}-[a-z]{2}\//i, '/').replace(/\/$/, '');
-    path = path.replace(/\/job\/[^/]+\/(.*_r\d+[^/]*)/i, '/job/$1');
-    return (u.hostname + path).toLowerCase();
-  } catch { return null; }
-}
+// normalizeUrl, parseJobTitleFallback, STAGE_COLOR, KNOWN_ATS_HOSTS: see
+// shared.js (loaded before this file)
 
 function esc(s) {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -34,8 +31,9 @@ function formatDate(d) {
 }
 
 function stageBadge(stage) {
-  const c = STAGE_COLORS[stage] || { bg: '#f3f4f6', color: '#6b7280' };
-  return `<span class="stage-badge" style="background:${c.bg};color:${c.color}">${esc(stage)}</span>`;
+  const bg = STAGE_BG[stage] || '#f3f4f6';
+  const color = STAGE_COLOR[stage] || '#6b7280';
+  return `<span class="stage-badge" style="background:${bg};color:${color}">${esc(stage)}</span>`;
 }
 
 // Capitalize the first letter of each word without altering punctuation —
@@ -82,9 +80,6 @@ function readJobPostingJsonLd() {
 // breadcrumb ("Job postings | Role | Location | Company | site.com") — the
 // JSON-LD path above is preferred whenever it's available.
 function extractJobInfo(pageTitle, tabUrl) {
-  let host = null;
-  try { host = new URL(tabUrl).hostname.replace(/^www\./, ''); } catch {}
-
   try {
     const u = new URL(tabUrl);
     const m = u.pathname.match(/\/job\/(?:[^/]+\/)?([^/]+?)(?:_[Rr]\d+)?(?:\/|$)/);
@@ -102,30 +97,7 @@ function extractJobInfo(pageTitle, tabUrl) {
     }
   } catch {}
 
-  let title = pageTitle
-    .replace(/\s*[-|]\s*(LinkedIn|Greenhouse|Lever|Workday|Indeed|Glassdoor|Jobs|Careers)[^|]*$/i, '')
-    .trim();
-
-  const atMatch = title.match(/^(.+?)\s+at\s+(.+)$/i);
-  if (atMatch) return { role: atMatch[1].trim(), company: atMatch[2].trim() };
-
-  const pipeMatch = title.match(/^(.+?)\s*\|\s*(.+)$/);
-  if (pipeMatch) return { role: pipeMatch[1].trim(), company: pipeMatch[2].trim() };
-
-  // "Role - Company" or "Role - Company - Location" — Indeed's own title
-  // convention. Gated to Indeed specifically: unlike "at"/"|", a bare " - "
-  // is common in all kinds of unrelated page titles, so applying this on
-  // every tab would fabricate a bogus company guess for any non-job page
-  // the popup happens to be opened on. Splits on the first " - " only: for
-  // a 3-part title the location ends up folded into company rather than
-  // parsed out separately (there's no reliable signal to draw that
-  // boundary), but that's still far better than an empty company.
-  if (host && /(^|\.)indeed\.com$/.test(host)) {
-    const dashMatch = title.match(/^(.+?)\s+-\s+(.+)$/);
-    if (dashMatch) return { role: dashMatch[1].trim(), company: dashMatch[2].trim() };
-  }
-
-  return { role: title, company: '' };
+  return parseJobTitleFallback(pageTitle, tabUrl);
 }
 
 // app.notion.com/native/p/{id} is Notion's own app-launch bridge page (what
@@ -313,9 +285,16 @@ function renderSaveForm(tabUrl, { role, company }, entries) {
     try {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       if (!tab) throw new Error('no active tab');
+      // KNOWN_ATS_HOSTS (shared.js) is passed in via args rather than
+      // hardcoded inside func below — args is the sanctioned way to get data
+      // into an injected function without a closure over the outer scope
+      // (which chrome.scripting.executeScript otherwise forbids). Keeps
+      // this list defined in exactly one place in the extension, instead of
+      // a second hardcoded copy buried inside the injected closure.
       const [result] = await chrome.scripting.executeScript({
         target: { tabId: tab.id },
-        func: () => {
+        args: [KNOWN_ATS_HOSTS],
+        func: (atsHosts) => {
           // Clone an element, strip non-content noise, return innerHTML
           function extractClean(el) {
             const clone = el.cloneNode(true);
@@ -354,13 +333,12 @@ function renderSaveForm(tabUrl, { role, company }, entries) {
           // attribute (always readable), and it's a real, directly-fetchable
           // page the server can extract from independently.
           function findEmbeddedAtsIframeUrl() {
-            const ATS_HOSTS = ['ashbyhq.com', 'greenhouse.io', 'lever.co', 'myworkday.com', 'myworkdayjobs.com'];
             for (const f of document.querySelectorAll('iframe[src]')) {
               try {
                 const host = new URL(f.src, location.href).hostname;
                 // Proper subdomain check — host.endsWith(h) alone would also
                 // match a lookalike like "evilashbyhq.com".
-                if (ATS_HOSTS.some(h => host === h || host.endsWith('.' + h))) return f.src;
+                if (atsHosts.some(h => host === h || host.endsWith('.' + h))) return f.src;
               } catch {}
             }
             return null;
