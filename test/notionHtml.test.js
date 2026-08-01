@@ -141,6 +141,9 @@ test('isAllowedEmbeddedJobUrl allows known ATS hosts and their subdomains over h
   // The real-world Workday form: a region label (wd1/wd5/...) between the
   // tenant and myworkdayjobs.com, plus a locale prefix in the path.
   assert.equal(isAllowedEmbeddedJobUrl('https://acme.wd1.myworkdayjobs.com/en-US/acme_careers/job/Remote/Product-Manager_R123'), true);
+  // iCIMS tenants self-embed via a same-origin ?in_iframe=1 variant of the
+  // same job URL (a WordPress career page's iframe pointing back at itself).
+  assert.equal(isAllowedEmbeddedJobUrl('https://acmecareers.icims.com/jobs/123/product-manager/job?in_iframe=1'), true);
 });
 
 test('isAllowedEmbeddedJobUrl rejects lookalike hosts, non-https, and malformed URLs', () => {
