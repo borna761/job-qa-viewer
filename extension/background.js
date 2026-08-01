@@ -1,29 +1,11 @@
+importScripts('shared.js'); // normalizeUrl, parseJobTitleFallback, STAGE_COLOR
+
 const API = 'http://localhost:3456/api/tracker/urls';
 const REFRESH_MINUTES = 5;
-
-const STAGE_COLOR = {
-  'Interested':  '#0891b2',
-  'Applied':     '#1d4ed8',
-  'Interviews':  '#7c3aed',
-  'Stale':       '#9ca3af',
-  'Turned Down': '#ea580c',
-  'Rejected':    '#dc2626',
-};
 
 let urlMap = null;
 let serverOnline = true;
 let fetchInFlight = null;
-
-// ---- URL normalisation ----
-
-function normalizeUrl(raw) {
-  try {
-    const u = new URL(raw);
-    let path = u.pathname.replace(/^\/[a-z]{2}-[a-z]{2}\//i, '/').replace(/\/$/, '');
-    path = path.replace(/\/job\/[^/]+\/(.*_r\d+[^/]*)/i, '/job/$1');
-    return (u.hostname + path).toLowerCase();
-  } catch { return null; }
-}
 
 // ---- Best-effort company guess for untracked postings ----
 //
@@ -74,25 +56,8 @@ function guessCompanyFromTab(title, tabUrl) {
       return parts.length >= 2 ? parts[parts.length - 2] : parts[0];
     }
   } catch {}
-  if (!title) return null;
-  const t = title.replace(/\s*[-|]\s*(LinkedIn|Greenhouse|Lever|Workday|Indeed|Glassdoor|Jobs|Careers)[^|]*$/i, '').trim();
-  const atWordMatch = t.match(/^(.+?)\s+at\s+(.+)$/i);
-  if (atWordMatch) return atWordMatch[2].trim();
-  // "Role @ Company" — the actual format Ashby-hosted job page titles use.
-  const atSymbolMatch = t.match(/^(.+?)\s*@\s*(.+)$/);
-  if (atSymbolMatch) return atSymbolMatch[2].trim();
-  const pipeMatch = t.match(/^(.+?)\s*\|\s*(.+)$/);
-  if (pipeMatch) return pipeMatch[2].trim();
-  // "Role - Company[ - Location]" — Indeed's own title convention. Gated to
-  // Indeed specifically: unlike "at"/"@"/"|", a bare " - " is common in all
-  // kinds of unrelated page titles (video titles, news headlines, ...), so
-  // applying this on every tab would fabricate a bogus company guess for
-  // any non-job page with a dash in its title.
-  if (host && /(^|\.)indeed\.com$/.test(host)) {
-    const dashMatch = t.match(/^(.+?)\s+-\s+(.+)$/);
-    if (dashMatch) return dashMatch[2].trim();
-  }
-  return null;
+  const { company } = parseJobTitleFallback(title, tabUrl, host);
+  return company || null;
 }
 
 // Loose match, not exact: a title/hostname-derived guess ("acmewidgets")
