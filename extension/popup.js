@@ -58,8 +58,21 @@ function titleCase(s) {
 // Read role/company from the page's JobPosting JSON-LD, when present. This is
 // injected into the tab via chrome.scripting.executeScript, so it must be a
 // self-contained function (no closures over the outer scope).
+//
+// Returns {role, company} for a full JobPosting match. Falls back to
+// {company} alone (no role) when there's no JobPosting node but there is an
+// Organization one — common on WordPress/Yoast-SEO-powered career pages,
+// which expose a site-wide @graph (WebPage/WebSite/Organization) instead of
+// job-specific schema, sometimes not even for the current route (observed on
+// a client-rendered ATS page whose JSON-LD still described an unrelated
+// "Privacy Policy" WebPage — the Organization name was still trustworthy,
+// the WebPage wasn't). An Organization node is common on almost any page
+// though, so this is gated to URLs that look like a job posting — using it
+// unconditionally would fabricate a company guess on completely unrelated
+// pages. The caller keeps its own title-derived role in this case.
 function readJobPostingJsonLd() {
   const scripts = document.querySelectorAll('script[type="application/ld+json"]');
+  let orgName = null;
   for (const s of scripts) {
     let json;
     try { json = JSON.parse(s.textContent); } catch { continue; }
@@ -70,8 +83,10 @@ function readJobPostingJsonLd() {
         const company = node.hiringOrganization && node.hiringOrganization.name;
         if (role && company) return { role, company };
       }
+      if (node && node['@type'] === 'Organization' && node.name) orgName = node.name;
     }
   }
+  if (orgName && /\/(jobs?|careers?)(\/|$)/i.test(location.pathname)) return { company: orgName };
   return null;
 }
 
@@ -463,7 +478,14 @@ async function init() {
           func: readJobPostingJsonLd,
         });
         const jsonLd = result?.result;
-        if (jsonLd) info = { role: capitalizeWords(jsonLd.role), company: jsonLd.company };
+        if (jsonLd?.role && jsonLd?.company) {
+          info = { role: capitalizeWords(jsonLd.role), company: jsonLd.company };
+        } else if (jsonLd?.company && !info.company) {
+          // Organization-only fallback (no JobPosting node) — fill in just
+          // the company, keep the title-derived role since there's nothing
+          // better to replace it with.
+          info = { ...info, company: jsonLd.company };
+        }
       } catch { /* scripting not available on this page — keep the title-based guess */ }
       renderSaveForm(tab.url, info, entries);
     }
