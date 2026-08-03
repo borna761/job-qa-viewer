@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Job Tracker",
-  "version": "1.2",
+  "version": "1.3",
   "minimum_chrome_version": "99",
   "description": "Shows whether you've already applied to a job posting",
   "permissions": ["tabs", "alarms", "storage", "scripting", "activeTab"],
