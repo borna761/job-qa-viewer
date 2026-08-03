@@ -49,6 +49,15 @@ function guessCompanyFromTab(title, tabUrl) {
     // Workday above, so the same "first label" extraction applies.
     if (/(^|\.)app\.loxo\.co$/.test(host)) return host.split('.')[0];
 
+    // Rippling ATS — ats.rippling.com/{locale}/{company}/jobs/{uuid}, where
+    // the locale segment (e.g. en-CA) is often but not always present.
+    // Company is the first path segment once that's stripped off.
+    if (/(^|\.)ats\.rippling\.com$/.test(host)) {
+      const path = u.pathname.replace(/^\/[a-z]{2}-[a-z]{2}\//i, '/');
+      const slug = path.split('/').filter(Boolean)[0];
+      if (slug) return slug;
+    }
+
     if (/\/job\/(?:[^/]+\/)?[^/]+?(?:_[Rr]\d+)?(?:\/|$)/.test(u.pathname)) {
       // Take the label just before the TLD, not always the first label —
       // "careers.zenith.com" is the company's own domain but the

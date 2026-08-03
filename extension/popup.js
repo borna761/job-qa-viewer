@@ -118,6 +118,17 @@ function extractJobInfo(pageTitle, tabUrl) {
       }
     }
 
+    // Rippling ATS — ats.rippling.com/{locale}/{company}/jobs/{uuid}, where
+    // the locale segment (e.g. en-CA) is often but not always present. The
+    // page title is just the bare role text with no company in it at all
+    // (unlike Kula.ai above, there's nothing to disambiguate) — company
+    // comes entirely from the URL.
+    if (/(^|\.)ats\.rippling\.com$/.test(host)) {
+      const path = u.pathname.replace(/^\/[a-z]{2}-[a-z]{2}\//i, '/');
+      const slug = path.split('/').filter(Boolean)[0];
+      if (slug && pageTitle) return { role: pageTitle.trim(), company: titleCase(slug) };
+    }
+
     const m = u.pathname.match(/\/job\/(?:[^/]+\/)?([^/]+?)(?:_[Rr]\d+)?(?:\/|$)/);
     // This heuristic assumes the segment after /job/ is a human-readable
     // slug (Workday-style: "Product-Manager"). Some ATS platforms (Loxo,
