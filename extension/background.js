@@ -30,7 +30,8 @@ function guessCompanyFromTab(title, tabUrl) {
     // segment at all, and Greenhouse uses "/jobs/" — plural, so it doesn't
     // match "/job/" either), so without this they fell through to the much
     // less reliable title-guessing and typically returned no company at all.
-    if (/(^|\.)(lever\.co|ashbyhq\.com|greenhouse\.io)$/.test(host)) {
+    // Kula.ai (careers.kula.ai/{company}/{jobId}/) uses the same shape.
+    if (/(^|\.)(lever\.co|ashbyhq\.com|greenhouse\.io|kula\.ai)$/.test(host)) {
       const slug = u.pathname.split('/').filter(Boolean)[0];
       if (slug) return slug;
     }

@@ -97,6 +97,27 @@ function readJobPostingJsonLd() {
 function extractJobInfo(pageTitle, tabUrl) {
   try {
     const u = new URL(tabUrl);
+    const host = u.hostname.replace(/^www\./, '');
+
+    // Kula.ai tenants — {subdomain}.kula.ai/{company}/{jobId}/: no JobPosting
+    // JSON-LD at all, and the title is "Role - Company" where Role itself
+    // can contain internal dashes (e.g. "Staff Engineer - Platform - Acme"),
+    // so a blind first/last " - " split isn't reliable. Instead: confirm the
+    // URL's company slug matches the title's trailing dash segment (loose,
+    // case/punctuation-insensitive compare), then use the title's own text
+    // as company — its real casing — and strip it off the end for role,
+    // sidestepping the ambiguity entirely.
+    if (/(^|\.)kula\.ai$/.test(host)) {
+      const slug = u.pathname.split('/').filter(Boolean)[0];
+      const dashParts = (pageTitle || '').split(/\s+-\s+/);
+      const lastPart = dashParts[dashParts.length - 1];
+      if (slug && lastPart && dashParts.length > 1 &&
+          lastPart.toLowerCase().replace(/[^a-z0-9]/g, '') === slug.toLowerCase().replace(/[^a-z0-9]/g, '')) {
+        const role = dashParts.slice(0, -1).join(' - ').trim();
+        if (role) return { role, company: lastPart.trim() };
+      }
+    }
+
     const m = u.pathname.match(/\/job\/(?:[^/]+\/)?([^/]+?)(?:_[Rr]\d+)?(?:\/|$)/);
     // This heuristic assumes the segment after /job/ is a human-readable
     // slug (Workday-style: "Product-Manager"). Some ATS platforms (Loxo,
