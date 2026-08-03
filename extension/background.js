@@ -30,7 +30,8 @@ function guessCompanyFromTab(title, tabUrl) {
     // segment at all, and Greenhouse uses "/jobs/" — plural, so it doesn't
     // match "/job/" either), so without this they fell through to the much
     // less reliable title-guessing and typically returned no company at all.
-    if (/(^|\.)(lever\.co|ashbyhq\.com|greenhouse\.io)$/.test(host)) {
+    // Kula.ai (careers.kula.ai/{company}/{jobId}/) uses the same shape.
+    if (/(^|\.)(lever\.co|ashbyhq\.com|greenhouse\.io|kula\.ai)$/.test(host)) {
       const slug = u.pathname.split('/').filter(Boolean)[0];
       if (slug) return slug;
     }
@@ -47,6 +48,15 @@ function guessCompanyFromTab(title, tabUrl) {
     // Loxo tenants — acme.app.loxo.co: same tenant-subdomain shape as
     // Workday above, so the same "first label" extraction applies.
     if (/(^|\.)app\.loxo\.co$/.test(host)) return host.split('.')[0];
+
+    // Rippling ATS — ats.rippling.com/{locale}/{company}/jobs/{uuid}, where
+    // the locale segment (e.g. en-CA) is often but not always present.
+    // Company is the first path segment once that's stripped off.
+    if (/(^|\.)ats\.rippling\.com$/.test(host)) {
+      const path = u.pathname.replace(/^\/[a-z]{2}-[a-z]{2}\//i, '/');
+      const slug = path.split('/').filter(Boolean)[0];
+      if (slug) return slug;
+    }
 
     if (/\/job\/(?:[^/]+\/)?[^/]+?(?:_[Rr]\d+)?(?:\/|$)/.test(u.pathname)) {
       // Take the label just before the TLD, not always the first label —
