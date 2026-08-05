@@ -14,6 +14,14 @@ const REFRESH_MINUTES = 5;
 let urlMap = null;
 let serverOnline = true;
 let fetchInFlight = null;
+// Distinct from urlMap.size === 0: that's also true for a tracker that's
+// genuinely empty, not just one that hasn't been fetched yet. updateTab
+// used to retry fetchUrlMap() whenever the map was empty for any reason —
+// and fetchUrlMap always calls updateTab again once it settles — so a
+// truly empty tracker (or a fetch that keeps coming back with zero
+// entries) recursed forever. This flag lets updateTab retry only the
+// genuine "never fetched this session" case.
+let hasFetchedOnce = false;
 
 // ---- Icon generation (lazy, fully guarded) ----
 
@@ -135,6 +143,7 @@ async function fetchUrlMap(force = false) {
       await ensureMap();
     } finally {
       fetchInFlight = null;
+      hasFetchedOnce = true;
     }
     try {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -144,55 +153,71 @@ async function fetchUrlMap(force = false) {
   return fetchInFlight;
 }
 
+// ---- Decide, then draw ----
+//
+// Pure decision logic — no chrome/OffscreenCanvas calls — kept separate from
+// resolveIcon/updateTab below specifically so it's testable without a canvas
+// polyfill: this is where an actual bug would live (which variant/title for
+// which tab state), not in the few lines of canvas drawing each variant
+// resolves to.
+function decideTabIconState(url, title, serverOnline, urlMap) {
+  if (!url || !url.startsWith('http'))
+    return { icon: { variant: 'default' }, title: 'Job Tracker' };
+
+  if (!serverOnline)
+    return { icon: { variant: 'offline' }, title: 'Job Tracker - server unreachable' };
+
+  const key = normalizeUrl(url);
+  const match = key ? urlMap.get(key) : null;
+
+  if (match) {
+    // Other tracked entries at the same company, excluding this one. Both
+    // sides here are real saved company names (not a title/URL guess), so
+    // this is an exact case-insensitive comparison, unlike the loose match
+    // used below for the untracked case.
+    const matchCompany = match.company.toLowerCase();
+    const hasOtherAtCompany = [...urlMap.entries()]
+      .some(([k, v]) => k !== key && v.company && v.company.toLowerCase() === matchCompany);
+    return {
+      icon: { variant: 'stage', stage: match.stage, badge: hasOtherAtCompany },
+      title: hasOtherAtCompany
+        ? `${match.company} — ${match.stage} (other applications tracked too)`
+        : `${match.company} — ${match.stage}`,
+    };
+  }
+
+  // Not this exact posting — but flag it if the company itself has other
+  // tracked applications, so that's visible without opening the popup.
+  const guessedCompany = guessCompanyFromTab(title, url);
+  const companyMatch = guessedCompany && [...urlMap.values()]
+    .some(v => v.company && companyNamesLooselyMatch(guessedCompany, v.company));
+
+  return companyMatch
+    ? { icon: { variant: 'companyHistory' }, title: 'Job Tracker - other applications tracked at this company' }
+    : { icon: { variant: 'default' }, title: 'Job Tracker - not applied' };
+}
+
+// Maps a decideTabIconState() variant to the actual (canvas-drawn) icon —
+// the one part of this that genuinely needs OffscreenCanvas, kept
+// deliberately trivial so there's nothing here worth testing beyond what
+// decideTabIconState already covers.
+function resolveIcon({ variant, stage, badge }) {
+  if (variant === 'offline') return offlineIcon();
+  if (variant === 'companyHistory') return companyHistoryIcon();
+  if (variant === 'stage') return iconForStage(stage, badge);
+  return defaultIcon();
+}
+
 // ---- Update a single tab ----
 
 async function updateTab(tabId, url, title) {
   try {
     await ensureMap();
-    if (urlMap.size === 0) await fetchUrlMap();
+    if (!hasFetchedOnce) await fetchUrlMap();
 
-    if (!url || !url.startsWith('http')) {
-      setIcon(tabId, defaultIcon());
-      setTitle({ tabId, title: 'Job Tracker' });
-      return;
-    }
-    if (!serverOnline) {
-      setIcon(tabId, offlineIcon());
-      setTitle({ tabId, title: 'Job Tracker - server unreachable' });
-      return;
-    }
-
-    const key = normalizeUrl(url);
-    const match = key ? urlMap.get(key) : null;
-
-    if (match) {
-      // Other tracked entries at the same company, excluding this one. Both
-      // sides here are real saved company names (not a title/URL guess), so
-      // this is an exact case-insensitive comparison, unlike the loose match
-      // used below for the untracked case.
-      const matchCompany = match.company.toLowerCase();
-      const hasOtherAtCompany = [...urlMap.entries()]
-        .some(([k, v]) => k !== key && v.company && v.company.toLowerCase() === matchCompany);
-      setIcon(tabId, iconForStage(match.stage, hasOtherAtCompany));
-      setTitle({ tabId, title: hasOtherAtCompany
-        ? `${match.company} — ${match.stage} (other applications tracked too)`
-        : `${match.company} — ${match.stage}` });
-      return;
-    }
-
-    // Not this exact posting — but flag it if the company itself has other
-    // tracked applications, so that's visible without opening the popup.
-    const guessedCompany = guessCompanyFromTab(title, url);
-    const companyMatch = guessedCompany && [...urlMap.values()]
-      .some(v => v.company && companyNamesLooselyMatch(guessedCompany, v.company));
-
-    if (companyMatch) {
-      setIcon(tabId, companyHistoryIcon());
-      setTitle({ tabId, title: 'Job Tracker - other applications tracked at this company' });
-    } else {
-      setIcon(tabId, defaultIcon());
-      setTitle({ tabId, title: 'Job Tracker - not applied' });
-    }
+    const state = decideTabIconState(url, title, serverOnline, urlMap);
+    setIcon(tabId, resolveIcon(state.icon));
+    setTitle({ tabId, title: state.title });
   } catch {}
 }
 
@@ -258,3 +283,15 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     return false;
   }
 });
+
+// Exported for node:test coverage (test/background.test.js) — no-op in the
+// real service worker, where `module` doesn't exist. The listener
+// registrations above are pure side-effect-free addListener() calls either
+// way, so nothing here needs guarding beyond the export itself.
+if (typeof module !== 'undefined') {
+  module.exports = {
+    updateTab, fetchUrlMap, ensureMap, buildMapFromEntries, saveMap,
+    iconForStage, defaultIcon, offlineIcon, companyHistoryIcon,
+    decideTabIconState,
+  };
+}

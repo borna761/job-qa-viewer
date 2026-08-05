@@ -450,4 +450,15 @@ async function init() {
   }
 }
 
-init();
+// Exported for node:test coverage (test/popup.test.js) — no-op in the real
+// popup, where `module` doesn't exist. init() runs immediately in that case
+// (as it always has); in Node, tests call it explicitly against their own
+// mocked chrome/document instead of it firing at require() time.
+if (typeof module !== 'undefined') {
+  module.exports = {
+    esc, formatDate, stageBadge, otherAppsAtCompany, otherAppsHtml,
+    notionPageUrl, renderTracked, renderSaveForm, readJobPostingJsonLd, init,
+  };
+} else {
+  init();
+}
