@@ -90,13 +90,16 @@ test('extractFromKnownAtsUrl: Kula.ai falls back to slug-only when the title doe
   );
 });
 
-test('extractFromKnownAtsUrl: Workday tenants (myworkdayjobs.com and the shorter myworkday.com)', () => {
+test('extractFromKnownAtsUrl: Workday tenants pull role from the /job/ slug too, not just company', () => {
   assert.deepEqual(
     extractFromKnownAtsUrl(null, 'https://acme.wd1.myworkdayjobs.com/en-US/acme_careers/job/Remote/Product-Manager_R123'),
-    { role: null, company: 'acme' },
+    { role: 'Product Manager', company: 'acme' },
   );
+});
+
+test('extractFromKnownAtsUrl: Workday tenant with no /job/ slug in the path still gets company, role null', () => {
   assert.deepEqual(
-    extractFromKnownAtsUrl(null, 'https://acme.myworkday.com/careers/job/1'),
+    extractFromKnownAtsUrl(null, 'https://acme.myworkday.com/careers/openings'),
     { role: null, company: 'acme' },
   );
 });
@@ -284,6 +287,22 @@ test('extractJobInfo: Ashby posting via the "@" title fallback keeps full title 
       'https://jobs.ashbyhq.com/acme/40d9a988-8944-4606-9ea1-51262e495768',
     ),
     { role: 'Staff and Senior Product Manager (Multiple Roles, Multiple Teams)', company: 'Acme Widgets' },
+  );
+});
+
+test('extractJobInfo: Workday posting resolves both role and company from the URL alone', () => {
+  // Regression: an earlier version of extractFromKnownAtsUrl's Workday
+  // branch returned role:null unconditionally, silently losing the
+  // URL-derived role popup.js used to get from the old generic-/job/-regex
+  // fallback (with the wrong company) before this branch existed — this
+  // locks in the fixed, composed behavior: correct company AND role, both
+  // from the URL, independent of whatever the raw tab title says.
+  assert.deepEqual(
+    extractJobInfo(
+      'breadcrumb noise unrelated to the role',
+      'https://acme.wd1.myworkdayjobs.com/en-US/acme_careers/job/Remote/Product-Manager_R123',
+    ),
+    { role: 'Product Manager', company: 'acme' },
   );
 });
 

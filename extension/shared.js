@@ -82,6 +82,20 @@ function extractFromKnownAtsUrl(pageTitle, tabUrl) {
   try { u = new URL(tabUrl); } catch { return null; }
   const host = u.hostname.replace(/^www\./, '');
 
+  // Shared by the Workday and generic-/job/ branches below: the segment
+  // after /job/ is a human-readable slug (Workday-style: "Product-Manager")
+  // on both. Some ATS platforms (Loxo, e.g. acme.app.loxo.co/job/{base64id})
+  // put an opaque base64 ID there instead — titleCase()-ing that produces
+  // garbage instead of a real role. "=" padding is a reliable base64 tell
+  // that never appears in an actual slug. Loxo has its own dedicated host
+  // check below that returns before ever reaching either /job/ branch, so
+  // this guard is mostly relevant for other opaque-ID platforms sharing the
+  // same URL shape.
+  const roleFromJobSlug = () => {
+    const m = u.pathname.match(/\/job\/(?:[^/]+\/)?([^/]+?)(?:_[Rr]\d+)?(?:\/|$)/);
+    return (m && !m[1].includes('=')) ? titleCase(m[1]) : null;
+  };
+
   // Hosted ATS boards that put the company slug directly in the path —
   // e.g. jobs.lever.co/acme/…, jobs.ashbyhq.com/acme/…,
   // boards.greenhouse.io/acme/jobs/1234 (or job-boards.greenhouse.io),
@@ -120,8 +134,12 @@ function extractFromKnownAtsUrl(pageTitle, tabUrl) {
   // below, there's no "careers." subdomain prefix to skip past. Anchored
   // the same way as the lever/ashby/greenhouse check above — a bare
   // .endsWith() would also match a lookalike like "evilmyworkdayjobs.com".
+  // Workday's own URLs always carry the /job/{slug} path this codebase
+  // already recognizes (that's literally the platform roleFromJobSlug was
+  // originally written for), so pull role from there too rather than
+  // leaving it null and losing a signal the URL already provides.
   if (/(^|\.)(myworkdayjobs\.com|myworkday\.com)$/.test(host))
-    return { role: null, company: host.split('.')[0] };
+    return { role: roleFromJobSlug(), company: host.split('.')[0] };
 
   // Loxo tenants — acme.app.loxo.co: same tenant-subdomain shape as
   // Workday above, so the same "first label" extraction applies.
@@ -138,21 +156,16 @@ function extractFromKnownAtsUrl(pageTitle, tabUrl) {
     if (slug) return { role: pageTitle ? pageTitle.trim() : null, company: titleCase(slug) };
   }
 
-  // Generic /job/ path with a human-readable slug (Workday-style custom
-  // domains: careers.zenith.com/job/Product-Manager). Some ATS platforms
-  // (Loxo, e.g. acme.app.loxo.co/job/{base64id}) put an opaque base64 ID
-  // there instead — titleCase()-ing that produces garbage instead of a
-  // real role. "=" padding is a reliable base64 tell that never appears in
-  // an actual slug.
-  const m = u.pathname.match(/\/job\/(?:[^/]+\/)?([^/]+?)(?:_[Rr]\d+)?(?:\/|$)/);
-  if (m && !m[1].includes('=')) {
-    const role = titleCase(m[1]);
+  // Generic /job/ path with a human-readable slug — custom domains that
+  // aren't a known ATS (careers.zenith.com/job/Product-Manager).
+  const genericRole = roleFromJobSlug();
+  if (genericRole) {
     // Take the label just before the TLD, not always the first label —
     // "careers.zenith.com" is the company's own domain but the company
     // name is "zenith", not "careers".
     const parts = host.split('.');
     const company = titleCase(parts.length >= 2 ? parts[parts.length - 2] : parts[0]);
-    if (role) return { role, company };
+    return { role: genericRole, company };
   }
 
   return null;
@@ -238,10 +251,13 @@ function parseJobTitleFallback(pageTitle, tabUrl, knownHost) {
 // Loxo case (a real posting whose title had a clean "Role | Company" but
 // whose URL only offers a lowercase slug) before this precedence was fixed.
 function extractJobInfo(pageTitle, tabUrl) {
+  let host = null;
+  try { host = new URL(tabUrl).hostname.replace(/^www\./, ''); } catch {}
+
   const known = extractFromKnownAtsUrl(pageTitle, tabUrl);
   if (known && known.role && known.company) return known;
 
-  const fallback = parseJobTitleFallback(pageTitle, tabUrl);
+  const fallback = parseJobTitleFallback(pageTitle, tabUrl, host);
   if (fallback.company) return fallback;
   if (known && known.company) return { role: fallback.role, company: known.company };
   return fallback;
@@ -253,9 +269,12 @@ function extractJobInfo(pageTitle, tabUrl) {
 // prefers the URL-derived company when a known ATS host matches — no title
 // fallback to weigh it against here, since role isn't needed at all.
 function guessCompanyFromTab(title, tabUrl) {
+  let host = null;
+  try { host = new URL(tabUrl).hostname.replace(/^www\./, ''); } catch {}
+
   const known = extractFromKnownAtsUrl(title, tabUrl);
   if (known && known.company) return known.company;
-  const { company } = parseJobTitleFallback(title, tabUrl);
+  const { company } = parseJobTitleFallback(title, tabUrl, host);
   return company || null;
 }
 
