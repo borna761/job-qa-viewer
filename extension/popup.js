@@ -17,8 +17,8 @@ const SAVE_STAGES = [
   { label: 'Active',      value: 'Active'      },
 ];
 
-// normalizeUrl, parseJobTitleFallback, STAGE_COLOR, KNOWN_ATS_HOSTS: see
-// shared.js (loaded before this file)
+// normalizeUrl, extractJobInfo, titleCase, STAGE_COLOR, KNOWN_ATS_HOSTS:
+// see shared.js (loaded before this file)
 
 function esc(s) {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -34,25 +34,6 @@ function stageBadge(stage) {
   const bg = STAGE_BG[stage] || '#f3f4f6';
   const color = STAGE_COLOR[stage] || '#6b7280';
   return `<span class="stage-badge" style="background:${bg};color:${color}">${esc(stage)}</span>`;
-}
-
-// Capitalize the first letter of each word without altering punctuation —
-// safe for already human-readable strings like a JSON-LD job title
-// ("EverPro - Product Manager" must keep its "-", not lose it to spaces).
-// Also fixes letter-digit-letter tokens (b2b -> B2B, b2c -> B2C, p2p -> P2P):
-// that shape is essentially always an X-to-Y business acronym, never a real
-// word, so it's safe to always fully uppercase.
-function capitalizeWords(s) {
-  return s
-    .replace(/\b\w/g, c => c.toUpperCase())
-    .replace(/\b[a-zA-Z]\d[a-zA-Z]\b/g, m => m.toUpperCase())
-    .trim();
-}
-
-// Slug -> Title Case: also turns hyphens/underscores into spaces, since
-// these inputs are dash-joined slugs (e.g. from a URL path), not prose.
-function titleCase(s) {
-  return capitalizeWords(s.replace(/[-_]/g, ' '));
 }
 
 // Read role/company from the page's JobPosting JSON-LD, when present. This is
@@ -88,63 +69,6 @@ function readJobPostingJsonLd() {
   }
   if (orgName && /\/(jobs?|careers?)(\/|$)/i.test(location.pathname)) return { company: orgName };
   return null;
-}
-
-// Fallback when there's no JobPosting JSON-LD: guess role/company from the
-// tab title. Unreliable on career sites that render the title as a
-// breadcrumb ("Job postings | Role | Location | Company | site.com") — the
-// JSON-LD path above is preferred whenever it's available.
-function extractJobInfo(pageTitle, tabUrl) {
-  try {
-    const u = new URL(tabUrl);
-    const host = u.hostname.replace(/^www\./, '');
-
-    // Kula.ai tenants — {subdomain}.kula.ai/{company}/{jobId}/: no JobPosting
-    // JSON-LD at all, and the title is "Role - Company" where Role itself
-    // can contain internal dashes (e.g. "Staff Engineer - Platform - Acme"),
-    // so a blind first/last " - " split isn't reliable. Instead: confirm the
-    // URL's company slug matches the title's trailing dash segment (loose,
-    // case/punctuation-insensitive compare), then use the title's own text
-    // as company — its real casing — and strip it off the end for role,
-    // sidestepping the ambiguity entirely.
-    if (/(^|\.)kula\.ai$/.test(host)) {
-      const slug = u.pathname.split('/').filter(Boolean)[0];
-      const dashParts = (pageTitle || '').split(/\s+-\s+/);
-      const lastPart = dashParts[dashParts.length - 1];
-      if (slug && lastPart && dashParts.length > 1 &&
-          lastPart.toLowerCase().replace(/[^a-z0-9]/g, '') === slug.toLowerCase().replace(/[^a-z0-9]/g, '')) {
-        const role = dashParts.slice(0, -1).join(' - ').trim();
-        if (role) return { role, company: lastPart.trim() };
-      }
-    }
-
-    // Rippling ATS — ats.rippling.com/{locale}/{company}/jobs/{uuid}, where
-    // the locale segment (e.g. en-CA) is often but not always present. The
-    // page title is just the bare role text with no company in it at all
-    // (unlike Kula.ai above, there's nothing to disambiguate) — company
-    // comes entirely from the URL.
-    if (/(^|\.)ats\.rippling\.com$/.test(host)) {
-      const path = u.pathname.replace(/^\/[a-z]{2}-[a-z]{2}\//i, '/');
-      const slug = path.split('/').filter(Boolean)[0];
-      if (slug && pageTitle) return { role: pageTitle.trim(), company: titleCase(slug) };
-    }
-
-    const m = u.pathname.match(/\/job\/(?:[^/]+\/)?([^/]+?)(?:_[Rr]\d+)?(?:\/|$)/);
-    // This heuristic assumes the segment after /job/ is a human-readable
-    // slug (Workday-style: "Product-Manager"). Some ATS platforms (Loxo,
-    // e.g. acme.app.loxo.co/job/{base64id}) instead put an opaque base64
-    // ID there — titleCase()-ing that produces garbage instead of a real
-    // role. "=" padding is a reliable base64 tell that never appears in
-    // an actual slug, so bail out and fall through to the title-based
-    // match below instead.
-    if (m && !m[1].includes('=')) {
-      const role = titleCase(m[1]);
-      const company = titleCase(u.hostname.replace(/^www\./, '').split('.')[0]);
-      if (role) return { role, company };
-    }
-  } catch {}
-
-  return parseJobTitleFallback(pageTitle, tabUrl);
 }
 
 // app.notion.com/native/p/{id} is Notion's own app-launch bridge page (what

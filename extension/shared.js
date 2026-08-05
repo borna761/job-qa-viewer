@@ -34,6 +34,130 @@ const STAGE_COLOR = {
 // the other via comment.
 const KNOWN_ATS_HOSTS = ['ashbyhq.com', 'greenhouse.io', 'lever.co', 'myworkday.com', 'myworkdayjobs.com', 'icims.com'];
 
+// ---- Text case helpers ----
+// Capitalize the first letter of each word without altering punctuation —
+// safe for already human-readable strings like a JSON-LD job title
+// ("EverPro - Product Manager" must keep its "-", not lose it to spaces).
+// Also fixes letter-digit-letter tokens (b2b -> B2B, b2c -> B2C, p2p -> P2P):
+// that shape is essentially always an X-to-Y business acronym, never a real
+// word, so it's safe to always fully uppercase.
+function capitalizeWords(s) {
+  return s
+    .replace(/\b\w/g, c => c.toUpperCase())
+    .replace(/\b[a-zA-Z]\d[a-zA-Z]\b/g, m => m.toUpperCase())
+    .trim();
+}
+
+// Slug -> Title Case: also turns hyphens/underscores into spaces, since
+// these inputs are dash-joined slugs (e.g. from a URL path), not prose.
+function titleCase(s) {
+  return capitalizeWords(s.replace(/[-_]/g, ' '));
+}
+
+// ---- Loose company-name matching ----
+// A title/hostname-derived guess ("acmewidgets") often won't equal the
+// company's saved display name ("Acme") exactly, so this is a substring
+// check in either direction. A minimum length guard avoids trivial false
+// positives from very short names.
+function companyNamesLooselyMatch(a, b) {
+  if (!a || !b) return false;
+  const na = a.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const nb = b.toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (!na || !nb) return false;
+  const [shorter, longer] = na.length <= nb.length ? [na, nb] : [nb, na];
+  if (shorter.length < 3) return false;
+  return longer.includes(shorter);
+}
+
+// ---- URL-pattern-based extraction for known ATS platforms ----
+// Consolidates the company (and sometimes role) that can be read directly
+// from a known ATS's URL shape — used by both background.js's toolbar-badge
+// guess (which only keeps .company) and popup.js's save-form fallback
+// (which uses both). Returns {role, company} (role is null when it isn't
+// derivable from the URL alone) or null when the URL doesn't match a known
+// ATS pattern at all — callers fall through to parseJobTitleFallback either
+// way.
+function extractFromKnownAtsUrl(pageTitle, tabUrl) {
+  let u;
+  try { u = new URL(tabUrl); } catch { return null; }
+  const host = u.hostname.replace(/^www\./, '');
+
+  // Hosted ATS boards that put the company slug directly in the path —
+  // e.g. jobs.lever.co/acme/…, jobs.ashbyhq.com/acme/…,
+  // boards.greenhouse.io/acme/jobs/1234 (or job-boards.greenhouse.io),
+  // careers.kula.ai/acme/…. These never match the /job/ pattern below
+  // (Lever/Ashby/Kula have no "job" segment at all, and Greenhouse uses
+  // "/jobs/" — plural, so it doesn't match "/job/" either), so without this
+  // they fell through to the much less reliable title-guessing and
+  // typically returned no company at all.
+  if (/(^|\.)(lever\.co|ashbyhq\.com|greenhouse\.io|kula\.ai)$/.test(host)) {
+    const slug = u.pathname.split('/').filter(Boolean)[0];
+    if (slug) {
+      // Kula.ai's title is "Role - Company" where Role itself can contain
+      // internal dashes (e.g. "Staff Engineer - Platform - Acme"), so a
+      // blind first/last " - " split isn't reliable. Cross-check the URL
+      // slug against the title's trailing dash segment (loose, case/
+      // punctuation-insensitive) to recover a clean role too when possible
+      // — the company itself is trustworthy from the URL either way, with
+      // or without a title to corroborate it.
+      if (/(^|\.)kula\.ai$/.test(host)) {
+        const dashParts = (pageTitle || '').split(/\s+-\s+/);
+        const lastPart = dashParts[dashParts.length - 1];
+        if (lastPart && dashParts.length > 1 &&
+            lastPart.toLowerCase().replace(/[^a-z0-9]/g, '') === slug.toLowerCase().replace(/[^a-z0-9]/g, '')) {
+          const role = dashParts.slice(0, -1).join(' - ').trim();
+          if (role) return { role, company: lastPart.trim() };
+        }
+      }
+      return { role: null, company: slug };
+    }
+  }
+
+  // Workday tenants — acme.myworkdayjobs.com (the real-world form, often
+  // with a region label too: acme.wd1.myworkdayjobs.com) or the shorter
+  // acme.myworkday.com. Either way company is the first hostname label,
+  // not the label before the TLD — unlike the company-owned-domain case
+  // below, there's no "careers." subdomain prefix to skip past. Anchored
+  // the same way as the lever/ashby/greenhouse check above — a bare
+  // .endsWith() would also match a lookalike like "evilmyworkdayjobs.com".
+  if (/(^|\.)(myworkdayjobs\.com|myworkday\.com)$/.test(host))
+    return { role: null, company: host.split('.')[0] };
+
+  // Loxo tenants — acme.app.loxo.co: same tenant-subdomain shape as
+  // Workday above, so the same "first label" extraction applies.
+  if (/(^|\.)app\.loxo\.co$/.test(host))
+    return { role: null, company: host.split('.')[0] };
+
+  // Rippling ATS — ats.rippling.com/{locale}/{company}/jobs/{uuid}, where
+  // the locale segment (e.g. en-CA) is often but not always present. The
+  // page title is just the bare role text with no company in it at all —
+  // company comes entirely from the URL, role from the raw title.
+  if (/(^|\.)ats\.rippling\.com$/.test(host)) {
+    const path = u.pathname.replace(/^\/[a-z]{2}-[a-z]{2}\//i, '/');
+    const slug = path.split('/').filter(Boolean)[0];
+    if (slug) return { role: pageTitle ? pageTitle.trim() : null, company: titleCase(slug) };
+  }
+
+  // Generic /job/ path with a human-readable slug (Workday-style custom
+  // domains: careers.zenith.com/job/Product-Manager). Some ATS platforms
+  // (Loxo, e.g. acme.app.loxo.co/job/{base64id}) put an opaque base64 ID
+  // there instead — titleCase()-ing that produces garbage instead of a
+  // real role. "=" padding is a reliable base64 tell that never appears in
+  // an actual slug.
+  const m = u.pathname.match(/\/job\/(?:[^/]+\/)?([^/]+?)(?:_[Rr]\d+)?(?:\/|$)/);
+  if (m && !m[1].includes('=')) {
+    const role = titleCase(m[1]);
+    // Take the label just before the TLD, not always the first label —
+    // "careers.zenith.com" is the company's own domain but the company
+    // name is "zenith", not "careers".
+    const parts = host.split('.');
+    const company = titleCase(parts.length >= 2 ? parts[parts.length - 2] : parts[0]);
+    if (role) return { role, company };
+  }
+
+  return null;
+}
+
 // ---- URL normalisation ----
 // Used to compare a tab's URL against a saved tracker entry's URL, ignoring
 // superficial differences (a locale path prefix, a trailing slash, Workday's
@@ -97,4 +221,52 @@ function parseJobTitleFallback(pageTitle, tabUrl, knownHost) {
   }
 
   return { role: title, company: '' };
+}
+
+// ---- Full role/company resolution ----
+// Composes extractFromKnownAtsUrl + parseJobTitleFallback the way popup.js's
+// save form needs (both role and company). Precedence: a cross-checked or
+// definitionally-company-less URL match (Kula.ai's title cross-check,
+// Rippling) is high-confidence — trust it outright. Otherwise prefer a
+// company the title itself already yielded (e.g. a clean "Role | Company"
+// match) over a bare URL slug — a raw slug like "acme" is a worse guess
+// than a title-derived "Acme Co." when both are available. The URL-based
+// company (Workday/Loxo/Lever/Ashby/Greenhouse/Rippling, or Kula.ai when its
+// title didn't cross-check) only wins when title parsing found nothing at
+// all — this used to be popup.js's own extractJobInfo, and that ordering is
+// exactly why: an earlier version that tried the URL first regressed the
+// Loxo case (a real posting whose title had a clean "Role | Company" but
+// whose URL only offers a lowercase slug) before this precedence was fixed.
+function extractJobInfo(pageTitle, tabUrl) {
+  const known = extractFromKnownAtsUrl(pageTitle, tabUrl);
+  if (known && known.role && known.company) return known;
+
+  const fallback = parseJobTitleFallback(pageTitle, tabUrl);
+  if (fallback.company) return fallback;
+  if (known && known.company) return { role: fallback.role, company: known.company };
+  return fallback;
+}
+
+// Company-only variant for background.js's toolbar-badge guess, which has
+// no DOM access to a page title beyond tab.title (see its own comment on
+// guessCompanyFromTab for why). Unlike extractJobInfo above, this always
+// prefers the URL-derived company when a known ATS host matches — no title
+// fallback to weigh it against here, since role isn't needed at all.
+function guessCompanyFromTab(title, tabUrl) {
+  const known = extractFromKnownAtsUrl(title, tabUrl);
+  if (known && known.company) return known.company;
+  const { company } = parseJobTitleFallback(title, tabUrl);
+  return company || null;
+}
+
+// Exported for node:test coverage (test/shared.test.js) — no-op in the
+// extension itself, where this file is loaded as a plain <script>/
+// importScripts and `module` doesn't exist.
+if (typeof module !== 'undefined') {
+  module.exports = {
+    STAGE_COLOR, KNOWN_ATS_HOSTS,
+    capitalizeWords, titleCase, companyNamesLooselyMatch,
+    extractFromKnownAtsUrl, normalizeUrl, parseJobTitleFallback,
+    extractJobInfo, guessCompanyFromTab,
+  };
 }
