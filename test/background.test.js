@@ -181,7 +181,9 @@ test('onMessage "refresh": triggers a fetch and calls sendResponse once it settl
 });
 
 test('onMessage "closeTabWhenLoaded": removes the tab shortly after it finishes loading', async t => {
-  t.mock.timers.enable({ apis: ['setTimeout'] });
+  // Array form, not { apis: [...] } — the object form isn't supported by
+  // node:test's mock timers on Node 18 (one of this project's CI targets).
+  t.mock.timers.enable(['setTimeout']);
   // background.js's own top-level chrome.tabs.onUpdated listener (unrelated
   // to closeTabWhenLoaded) also fires on the _fire() call below and calls
   // updateTab, which triggers one fetchUrlMap() this session — mock fetch
@@ -216,7 +218,7 @@ test('onMessage "closeTabWhenLoaded": removes the tab shortly after it finishes 
 });
 
 test('onMessage "closeTabWhenLoaded": leaves the tab alone if the user switched to it', async t => {
-  t.mock.timers.enable({ apis: ['setTimeout'] });
+  t.mock.timers.enable(['setTimeout']);
   global.fetch = async () => ({ ok: true, json: async () => [] });
   loadBackground({ tabs: [{ id: 42, active: true }] }); // user is now looking at it
 
