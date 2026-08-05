@@ -64,19 +64,27 @@ function parseJobTitleFallback(pageTitle, tabUrl, knownHost) {
   }
 
   const title = (pageTitle || '')
-    .replace(/\s*[-|]\s*(LinkedIn|Greenhouse|Lever|Workday|Indeed|Glassdoor|Jobs|Careers)[^|]*$/i, '')
+    .replace(/\s*[-|]\s*(LinkedIn|Greenhouse|Lever|Workday|Indeed|Glassdoor|Jobs|Careers|Wellfound)[^|]*$/i, '')
     .trim();
   if (!title) return { role: '', company: '' };
 
+  // Some sites (Wellfound: "Role at Company • Boston • Toronto • Remote
+  // (Work from Home)") tack extra "• Location • Location • WorkType" tags
+  // onto the end of the company segment — none of that is the company name.
+  // "•" is never legitimately part of a company name in any of these title
+  // conventions, so it's safe to cut there regardless of which pattern below
+  // matched.
+  const cleanCompany = s => s.split(/\s*•\s*/)[0].trim();
+
   const atMatch = title.match(/^(.+?)\s+at\s+(.+)$/i);
-  if (atMatch) return { role: atMatch[1].trim(), company: atMatch[2].trim() };
+  if (atMatch) return { role: atMatch[1].trim(), company: cleanCompany(atMatch[2]) };
 
   // "Role @ Company" — the actual format Ashby-hosted job page titles use.
   const atSymbolMatch = title.match(/^(.+?)\s*@\s*(.+)$/);
-  if (atSymbolMatch) return { role: atSymbolMatch[1].trim(), company: atSymbolMatch[2].trim() };
+  if (atSymbolMatch) return { role: atSymbolMatch[1].trim(), company: cleanCompany(atSymbolMatch[2]) };
 
   const pipeMatch = title.match(/^(.+?)\s*\|\s*(.+)$/);
-  if (pipeMatch) return { role: pipeMatch[1].trim(), company: pipeMatch[2].trim() };
+  if (pipeMatch) return { role: pipeMatch[1].trim(), company: cleanCompany(pipeMatch[2]) };
 
   // "Role - Company[ - Location]" — Indeed's own title convention. Gated to
   // Indeed specifically: unlike "at"/"@"/"|", a bare " - " is common in all
@@ -85,7 +93,7 @@ function parseJobTitleFallback(pageTitle, tabUrl, knownHost) {
   // any non-job page with a dash in its title.
   if (host && /(^|\.)indeed\.com$/.test(host)) {
     const dashMatch = title.match(/^(.+?)\s+-\s+(.+)$/);
-    if (dashMatch) return { role: dashMatch[1].trim(), company: dashMatch[2].trim() };
+    if (dashMatch) return { role: dashMatch[1].trim(), company: cleanCompany(dashMatch[2]) };
   }
 
   return { role: title, company: '' };
