@@ -1,4 +1,12 @@
-importScripts('shared.js'); // normalizeUrl, parseJobTitleFallback, STAGE_COLOR
+// guessCompanyFromTab, companyNamesLooselyMatch, normalizeUrl, STAGE_COLOR:
+// see shared.js. guessCompanyFromTab is deliberately simpler than popup.js's
+// extractJobInfo — no JobPosting JSON-LD here, since reading it needs
+// scripting.executeScript, which needs a user gesture background.js doesn't
+// have. tab.title/tab.url are already available from the "tabs" permission
+// on every tab, gesture or not, so this is what's cheaply available. A soft
+// signal, not authoritative — the popup's own richer detection is what
+// actually runs once it's opened.
+importScripts('shared.js');
 
 const API = 'http://localhost:3456/api/tracker/urls';
 const REFRESH_MINUTES = 5;
@@ -6,83 +14,6 @@ const REFRESH_MINUTES = 5;
 let urlMap = null;
 let serverOnline = true;
 let fetchInFlight = null;
-
-// ---- Best-effort company guess for untracked postings ----
-//
-// Used only for the "you have other applications at this company" icon
-// hint — deliberately simpler than popup.js's extractJobInfo: no JobPosting
-// JSON-LD here, since reading it needs scripting.executeScript, which needs
-// a user gesture background.js doesn't have. tab.title/tab.url are already
-// available from the "tabs" permission on every tab, gesture or not, so this
-// is what's cheaply available. A soft signal, not authoritative — the
-// popup's own richer detection is what actually runs once it's opened.
-function guessCompanyFromTab(title, tabUrl) {
-  let host = null;
-  try { host = new URL(tabUrl).hostname.replace(/^www\./, ''); } catch {}
-
-  try {
-    const u = new URL(tabUrl);
-
-    // Hosted ATS boards that put the company slug directly in the path —
-    // e.g. jobs.lever.co/acme/…, jobs.ashbyhq.com/acme/…,
-    // boards.greenhouse.io/acme/jobs/1234 (or job-boards.greenhouse.io).
-    // These never match the /job/ pattern below (Lever/Ashby have no "job"
-    // segment at all, and Greenhouse uses "/jobs/" — plural, so it doesn't
-    // match "/job/" either), so without this they fell through to the much
-    // less reliable title-guessing and typically returned no company at all.
-    // Kula.ai (careers.kula.ai/{company}/{jobId}/) uses the same shape.
-    if (/(^|\.)(lever\.co|ashbyhq\.com|greenhouse\.io|kula\.ai)$/.test(host)) {
-      const slug = u.pathname.split('/').filter(Boolean)[0];
-      if (slug) return slug;
-    }
-
-    // Workday tenants — acme.myworkdayjobs.com (the real-world form, often
-    // with a region label too: acme.wd1.myworkdayjobs.com) or the shorter
-    // acme.myworkday.com. Either way company is the first hostname label,
-    // not the label before the TLD — unlike the company-owned-domain case
-    // below, there's no "careers." subdomain prefix to skip past. Anchored
-    // the same way as the lever/ashby/greenhouse check above — a bare
-    // .endsWith() would also match a lookalike like "evilmyworkdayjobs.com".
-    if (/(^|\.)(myworkdayjobs\.com|myworkday\.com)$/.test(host)) return host.split('.')[0];
-
-    // Loxo tenants — acme.app.loxo.co: same tenant-subdomain shape as
-    // Workday above, so the same "first label" extraction applies.
-    if (/(^|\.)app\.loxo\.co$/.test(host)) return host.split('.')[0];
-
-    // Rippling ATS — ats.rippling.com/{locale}/{company}/jobs/{uuid}, where
-    // the locale segment (e.g. en-CA) is often but not always present.
-    // Company is the first path segment once that's stripped off.
-    if (/(^|\.)ats\.rippling\.com$/.test(host)) {
-      const path = u.pathname.replace(/^\/[a-z]{2}-[a-z]{2}\//i, '/');
-      const slug = path.split('/').filter(Boolean)[0];
-      if (slug) return slug;
-    }
-
-    if (/\/job\/(?:[^/]+\/)?[^/]+?(?:_[Rr]\d+)?(?:\/|$)/.test(u.pathname)) {
-      // Take the label just before the TLD, not always the first label —
-      // "careers.zenith.com" is the company's own domain but the
-      // company name is "zenith", not "careers".
-      const parts = host.split('.');
-      return parts.length >= 2 ? parts[parts.length - 2] : parts[0];
-    }
-  } catch {}
-  const { company } = parseJobTitleFallback(title, tabUrl, host);
-  return company || null;
-}
-
-// Loose match, not exact: a title/hostname-derived guess ("acmewidgets")
-// often won't equal the company's saved display name ("Acme") exactly, so
-// this is a substring check in either direction. A minimum length guard
-// avoids trivial false positives from very short names.
-function companyNamesLooselyMatch(a, b) {
-  if (!a || !b) return false;
-  const na = a.toLowerCase().replace(/[^a-z0-9]/g, '');
-  const nb = b.toLowerCase().replace(/[^a-z0-9]/g, '');
-  if (!na || !nb) return false;
-  const [shorter, longer] = na.length <= nb.length ? [na, nb] : [nb, na];
-  if (shorter.length < 3) return false;
-  return longer.includes(shorter);
-}
 
 // ---- Icon generation (lazy, fully guarded) ----
 
