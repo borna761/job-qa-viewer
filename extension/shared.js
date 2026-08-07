@@ -91,8 +91,16 @@ function extractFromKnownAtsUrl(pageTitle, tabUrl) {
   // check below that returns before ever reaching either /job/ branch, so
   // this guard is mostly relevant for other opaque-ID platforms sharing the
   // same URL shape.
+  // The trailing "_<requisition id>" suffix isn't always "_R<digits>" —
+  // some tenants use a bespoke alphanumeric code instead (observed: a real
+  // posting whose ID was digits-then-letters-then-digits, e.g. "_12CD34567",
+  // plus a "-2" repost/revision suffix, which the old "_[Rr]\d+"-only
+  // pattern left stuck onto the role). Workday's own convention reserves
+  // "_" in this segment for the requisition ID, never for role text, so
+  // it's safe to strip any trailing "_<code containing a digit>" here
+  // regardless of its exact shape.
   const roleFromJobSlug = () => {
-    const m = u.pathname.match(/\/job\/(?:[^/]+\/)?([^/]+?)(?:_[Rr]\d+)?(?:\/|$)/);
+    const m = u.pathname.match(/\/job\/(?:[^/]+\/)?([^/]+?)(?:_[A-Za-z0-9]*\d[A-Za-z0-9]*(?:-\d+)?)?(?:\/|$)/);
     return (m && !m[1].includes('=')) ? titleCase(m[1]) : null;
   };
 

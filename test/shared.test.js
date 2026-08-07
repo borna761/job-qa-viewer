@@ -104,6 +104,21 @@ test('extractFromKnownAtsUrl: Workday tenant with no /job/ slug in the path stil
   );
 });
 
+test('extractFromKnownAtsUrl: Workday requisition IDs that don\'t start with "R" still get stripped from the role', () => {
+  // Not every tenant's requisition ID follows the "_R<digits>" shape the
+  // original regex assumed — some are a bespoke alphanumeric code (here,
+  // digits-then-letters-then-digits) with a trailing "-<n>" repost/revision
+  // suffix. A real posting had this exact shape and the old regex left the
+  // whole ID stuck onto the role instead of stripping it.
+  assert.deepEqual(
+    extractFromKnownAtsUrl(
+      null,
+      'https://acme.wd1.myworkdayjobs.com/en-US/acme_careers/job/Remote/Staff-Engineer---Developer-Platform_12CD34567-2',
+    ),
+    { role: 'Staff Engineer   Developer Platform', company: 'Acme' },
+  );
+});
+
 test('extractFromKnownAtsUrl: Workday host match is anchored, not a bare suffix check', () => {
   // A naive .endsWith('myworkdayjobs.com') would also match this lookalike.
   // Path deliberately has no /job/ segment, so this isolates the Workday
