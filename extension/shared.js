@@ -123,7 +123,7 @@ function extractFromKnownAtsUrl(pageTitle, tabUrl) {
           if (role) return { role, company: lastPart.trim() };
         }
       }
-      return { role: null, company: slug };
+      return { role: null, company: titleCase(slug) };
     }
   }
 
@@ -139,12 +139,12 @@ function extractFromKnownAtsUrl(pageTitle, tabUrl) {
   // originally written for), so pull role from there too rather than
   // leaving it null and losing a signal the URL already provides.
   if (/(^|\.)(myworkdayjobs\.com|myworkday\.com)$/.test(host))
-    return { role: roleFromJobSlug(), company: host.split('.')[0] };
+    return { role: roleFromJobSlug(), company: titleCase(host.split('.')[0]) };
 
   // Loxo tenants — acme.app.loxo.co: same tenant-subdomain shape as
   // Workday above, so the same "first label" extraction applies.
   if (/(^|\.)app\.loxo\.co$/.test(host))
-    return { role: null, company: host.split('.')[0] };
+    return { role: null, company: titleCase(host.split('.')[0]) };
 
   // Rippling ATS — ats.rippling.com/{locale}/{company}/jobs/{uuid}, where
   // the locale segment (e.g. en-CA) is often but not always present. The

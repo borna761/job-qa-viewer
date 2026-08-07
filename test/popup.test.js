@@ -215,7 +215,7 @@ test('init: renders renderSaveForm from the title-derived guess when the tab is 
     executeScript: async () => [{ result: null }], // no JobPosting/Organization JSON-LD on this page
   });
   await popup.init();
-  assert.equal(global.document.getElementById('inp-company').value, 'acme');
+  assert.equal(global.document.getElementById('inp-company').value, 'Acme');
   assert.ok(global.document.getElementById('save-btn'));
 });
 
