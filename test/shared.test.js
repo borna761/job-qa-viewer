@@ -6,7 +6,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const {
-  capitalizeWords, titleCase, companyNamesLooselyMatch,
+  capitalizeWords, titleCase, companyNamesLooselyMatch, stripLeadingOrgCode,
   extractFromKnownAtsUrl, normalizeUrl, parseJobTitleFallback,
   extractJobInfo, guessCompanyFromTab,
 } = require('../extension/shared');
@@ -372,4 +372,26 @@ test('guessCompanyFromTab: falls back to title parsing when no known ATS host ma
 
 test('guessCompanyFromTab: returns null when neither the URL nor the title yields a company', () => {
   assert.equal(guessCompanyFromTab('Python Tutorial - Learn Fast', 'https://www.youtube.com/watch?v=xyz'), null);
+});
+
+// ---- stripLeadingOrgCode ----
+
+test('stripLeadingOrgCode: strips a leading numeric reference code and the space after it', () => {
+  assert.equal(stripLeadingOrgCode('4521 Acme Manufacturing A/S'), 'Acme Manufacturing A/S');
+});
+
+test('stripLeadingOrgCode: leaves a name with no leading number untouched', () => {
+  assert.equal(stripLeadingOrgCode('Acme Manufacturing A/S'), 'Acme Manufacturing A/S');
+});
+
+test('stripLeadingOrgCode: only strips a code at the very start, not a number appearing later', () => {
+  assert.equal(stripLeadingOrgCode('Acme 4521 Manufacturing'), 'Acme 4521 Manufacturing');
+});
+
+test('stripLeadingOrgCode: leaves a short (1-2 digit) leading number alone — real companies are named this way', () => {
+  // A real ATS-observed reference code was 4 digits; real short numeric
+  // company names are 1-2 digits. Requiring 3+ digits catches the former
+  // without corrupting the latter.
+  assert.equal(stripLeadingOrgCode('12 Rivers Trading'), '12 Rivers Trading');
+  assert.equal(stripLeadingOrgCode('3 Oaks Logistics'), '3 Oaks Logistics');
 });
