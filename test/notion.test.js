@@ -1,6 +1,6 @@
 const { test, beforeEach, afterEach } = require('node:test');
 const assert = require('node:assert/strict');
-const { notionFetch } = require('../lib/notion');
+const { notionFetch, parseTitleToApp } = require('../lib/notion');
 
 // notionFetch reads process.env.NOTION_TOKEN and calls the global fetch —
 // stub both per test so this never touches the real Notion API.
@@ -75,4 +75,69 @@ test('notionFetch does not retry non-429 errors', async () => {
   };
   await assert.rejects(() => notionFetch('x'), /Notion API 500/);
   assert.equal(calls, 1);
+});
+
+// ---- parseTitleToApp ----
+// Notion child-page title format (documented in the README):
+// "[🔗 link] — Role | Company"
+
+function block(title, { id = 'page-id', created_time = '2026-01-01T00:00:00.000Z' } = {}) {
+  return { id, created_time, child_page: { title } };
+}
+
+test('parseTitleToApp: full "[link] — Role | Company" title splits role and company', () => {
+  assert.deepEqual(
+    parseTitleToApp(block('[🔗 link] — Product Manager | Acme Corp'), 'Applied'),
+    { company: 'Acme Corp', role: 'Product Manager', stage: 'Applied', lastUpdate: '2026-01-01T00:00:00.000Z', source: 'notion', notionPageId: 'page-id' },
+  );
+});
+
+test('parseTitleToApp: the "[link] —" prefix is optional — a bare "Role | Company" still splits', () => {
+  assert.deepEqual(
+    parseTitleToApp(block('Product Manager | Acme Corp'), 'Applied'),
+    { company: 'Acme Corp', role: 'Product Manager', stage: 'Applied', lastUpdate: '2026-01-01T00:00:00.000Z', source: 'notion', notionPageId: 'page-id' },
+  );
+});
+
+test('parseTitleToApp: an en-dash or plain hyphen after the bracket works the same as an em-dash', () => {
+  assert.equal(parseTitleToApp(block('[🔗 link] – Product Manager | Acme Corp'), 'Applied').role, 'Product Manager');
+  assert.equal(parseTitleToApp(block('[🔗 link] - Product Manager | Acme Corp'), 'Applied').role, 'Product Manager');
+});
+
+test('parseTitleToApp: strips a leading "Application for" / "Job Application for" from the role', () => {
+  assert.equal(parseTitleToApp(block('Application for Product Manager | Acme Corp'), 'Applied').role, 'Product Manager');
+  assert.equal(parseTitleToApp(block('Job Application for Product Manager | Acme Corp'), 'Applied').role, 'Product Manager');
+});
+
+test('parseTitleToApp: a role that strips down to nothing (e.g. bare "Job Application") becomes null, not an empty string', () => {
+  const app = parseTitleToApp(block('Job Application | Acme Corp'), 'Applied');
+  assert.equal(app.role, null);
+  assert.equal(app.company, 'Acme Corp');
+});
+
+test('parseTitleToApp: no pipe at all falls back to the whole (trimmed) title as company, role null', () => {
+  assert.deepEqual(
+    parseTitleToApp(block('[🔗 link] — Acme Corp'), 'Interviews'),
+    { company: 'Acme Corp', role: null, stage: 'Interviews', lastUpdate: '2026-01-01T00:00:00.000Z', source: 'notion', notionPageId: 'page-id' },
+  );
+});
+
+test('parseTitleToApp: an empty/whitespace-only title (no pipe, nothing left after trimming) returns null', () => {
+  assert.equal(parseTitleToApp(block(''), 'Applied'), null);
+  assert.equal(parseTitleToApp(block('   '), 'Applied'), null);
+});
+
+test('parseTitleToApp: a missing child_page.title is treated as an empty title, not a throw', () => {
+  assert.equal(parseTitleToApp({ id: 'x', created_time: null }, 'Applied'), null);
+});
+
+test('parseTitleToApp: a missing created_time yields lastUpdate: null', () => {
+  const app = parseTitleToApp(block('Role | Company', { created_time: null }), 'Applied');
+  assert.equal(app.lastUpdate, null);
+});
+
+test('parseTitleToApp: extra whitespace around the pipe is trimmed from both role and company', () => {
+  const app = parseTitleToApp(block('  Product Manager   |   Acme Corp  '), 'Applied');
+  assert.equal(app.role, 'Product Manager');
+  assert.equal(app.company, 'Acme Corp');
 });

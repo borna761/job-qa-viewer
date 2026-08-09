@@ -7,12 +7,11 @@
 // call gets an independent instance — the same trick you'd reach for
 // testing any stateful singleton module.
 const path = require('path');
+const { freshRequireAbsolute } = require('./freshRequireAbsolute');
 const EXT_DIR = path.join(__dirname, '..', 'extension');
 
 function freshRequire(filename) {
-  const full = path.join(EXT_DIR, filename);
-  delete require.cache[require.resolve(full)];
-  return require(full);
+  return freshRequireAbsolute(path.join(EXT_DIR, filename));
 }
 
 module.exports = { freshRequire, EXT_DIR };
