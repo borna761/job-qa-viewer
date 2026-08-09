@@ -98,9 +98,11 @@ function extractFromKnownAtsUrl(pageTitle, tabUrl) {
   // pattern left stuck onto the role). Workday's own convention reserves
   // "_" in this segment for the requisition ID, never for role text, so
   // it's safe to strip any trailing "_<code containing a digit>" here
-  // regardless of its exact shape.
+  // regardless of its exact shape — except a bare single character (e.g.
+  // "_2"), which is more likely a role's own level number than a real
+  // requisition ID; real IDs are always at least 2 characters.
   const roleFromJobSlug = () => {
-    const m = u.pathname.match(/\/job\/(?:[^/]+\/)?([^/]+?)(?:_[A-Za-z0-9]*\d[A-Za-z0-9]*(?:-\d+)?)?(?:\/|$)/);
+    const m = u.pathname.match(/\/job\/(?:[^/]+\/)?([^/]+?)(?:_(?:[A-Za-z0-9]+\d[A-Za-z0-9]*|\d[A-Za-z0-9]+)(?:-\d+)?)?(?:\/|$)/);
     return (m && !m[1].includes('=')) ? titleCase(m[1]) : null;
   };
 

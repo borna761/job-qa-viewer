@@ -119,6 +119,20 @@ test('extractFromKnownAtsUrl: Workday requisition IDs that don\'t start with "R"
   );
 });
 
+test('extractFromKnownAtsUrl: a bare trailing "_<digit>" is kept as role text, not mistaken for a requisition ID', () => {
+  // Real requisition IDs are always more than a single character (e.g.
+  // "R123", "26WD97546") — a lone trailing "_2" is far more likely to be
+  // part of the role itself (a level number) than an ID, so the strip
+  // regex requires at least 2 characters in the code before it fires.
+  assert.deepEqual(
+    extractFromKnownAtsUrl(
+      null,
+      'https://acme.wd1.myworkdayjobs.com/en-US/acme_careers/job/Remote/Software-Engineer_2',
+    ),
+    { role: 'Software Engineer 2', company: 'Acme' },
+  );
+});
+
 test('extractFromKnownAtsUrl: Workday host match is anchored, not a bare suffix check', () => {
   // A naive .endsWith('myworkdayjobs.com') would also match this lookalike.
   // Path deliberately has no /job/ segment, so this isolates the Workday
