@@ -75,8 +75,13 @@ function companyNamesLooselyMatch(a, b) {
 // hiringOrganization.name as "4521 Acme Manufacturing A/S" — the leading
 // number is never a legitimate part of a company's actual name, unlike the
 // rest of the string, which may be a real, if verbose, legal entity name).
+// Requires 3+ digits before stripping — real companies are sometimes legally
+// named with a short leading number (e.g. "12 Rivers Trading", "3 Oaks
+// Logistics"), always 1-2 digits in practice, while the one real reference
+// code observed was 4 digits; this threshold catches the latter without
+// corrupting the former.
 function stripLeadingOrgCode(name) {
-  return name.replace(/^\d+\s+/, '').trim();
+  return name.replace(/^\d{3,}\s+/, '').trim();
 }
 
 // ---- URL-pattern-based extraction for known ATS platforms ----

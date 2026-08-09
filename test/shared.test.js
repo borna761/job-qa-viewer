@@ -387,3 +387,11 @@ test('stripLeadingOrgCode: leaves a name with no leading number untouched', () =
 test('stripLeadingOrgCode: only strips a code at the very start, not a number appearing later', () => {
   assert.equal(stripLeadingOrgCode('Acme 4521 Manufacturing'), 'Acme 4521 Manufacturing');
 });
+
+test('stripLeadingOrgCode: leaves a short (1-2 digit) leading number alone — real companies are named this way', () => {
+  // A real ATS-observed reference code was 4 digits; real short numeric
+  // company names are 1-2 digits. Requiring 3+ digits catches the former
+  // without corrupting the latter.
+  assert.equal(stripLeadingOrgCode('12 Rivers Trading'), '12 Rivers Trading');
+  assert.equal(stripLeadingOrgCode('3 Oaks Logistics'), '3 Oaks Logistics');
+});
