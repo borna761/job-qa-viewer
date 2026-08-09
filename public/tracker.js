@@ -372,3 +372,14 @@ function initTrackerTabs() {
 
 initTrackerTabs();
 initDetailPanel();
+
+// Exported for node:test coverage (test/tracker.test.js) — no-op in the real
+// browser, where `module` doesn't exist. Both init calls above still run
+// unconditionally either way, exactly as before.
+if (typeof module !== 'undefined') {
+  module.exports = {
+    companyToSlug, hasNotes, stageBadgeHtml, formatDate, renderStats, renderStageFilters,
+    renderTable, filterApps, renderTracker, renderSetupBanner, loadTracker, openDetail,
+    gmailErrorMessage, emailCardHtml, renderEmails, closeDetail, switchToQAForCompany,
+  };
+}

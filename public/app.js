@@ -691,3 +691,16 @@ document.getElementById('settings-save').addEventListener('click', async () => {
     showToast('Error saving settings');
   }
 });
+
+// Exported for node:test coverage (test/app.test.js) — no-op in the real
+// browser, where `module` doesn't exist. Every top-level statement above
+// (DOM lookups, addEventListener wiring, the initial fetch-driven load)
+// still runs unconditionally either way, exactly as before — this only
+// adds a way for tests to reach the functions afterward.
+if (typeof module !== 'undefined') {
+  module.exports = {
+    esc, highlight, countLabel, cardHTML, catSelectHTML, sourceSelectHTML,
+    visiblePairs, render, renderSidebar, sortCompanies, populateAddPanelSelects,
+    saveOrder, enterEditMode, openSettings, renderCompaniesSection, renderSettingsModal,
+  };
+}
