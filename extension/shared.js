@@ -69,6 +69,16 @@ function companyNamesLooselyMatch(a, b) {
   return longer.includes(shorter);
 }
 
+// ---- JSON-LD organization name cleanup ----
+// Some ATS-hosted pages' JobPosting/Organization JSON-LD carries an internal
+// reference code before the real company name (observed: a Workday tenant's
+// hiringOrganization.name as "4521 Acme Manufacturing A/S" — the leading
+// number is never a legitimate part of a company's actual name, unlike the
+// rest of the string, which may be a real, if verbose, legal entity name).
+function stripLeadingOrgCode(name) {
+  return name.replace(/^\d+\s+/, '').trim();
+}
+
 // ---- URL-pattern-based extraction for known ATS platforms ----
 // Consolidates the company (and sometimes role) that can be read directly
 // from a known ATS's URL shape — used by both background.js's toolbar-badge
@@ -294,7 +304,7 @@ function guessCompanyFromTab(title, tabUrl) {
 if (typeof module !== 'undefined') {
   module.exports = {
     STAGE_COLOR, KNOWN_ATS_HOSTS,
-    capitalizeWords, titleCase, companyNamesLooselyMatch,
+    capitalizeWords, titleCase, companyNamesLooselyMatch, stripLeadingOrgCode,
     extractFromKnownAtsUrl, normalizeUrl, parseJobTitleFallback,
     extractJobInfo, guessCompanyFromTab,
   };

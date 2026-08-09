@@ -87,13 +87,18 @@ function notionPageUrl(pageId) {
 // same posting can differ superficially (trailing slash, tracking params)
 // while still being the same application, exactly what normalizeUrl is
 // already used elsewhere in this file to collapse.
+// Company itself is compared via companyNamesLooselyMatch (shared.js), not
+// exact equality — background.js's own "other applications at this company"
+// toolbar badge already uses the same loose match, so a badge dot with no
+// matching "Also at X" box in the popup (reported: a company whose JSON-LD
+// name carries extra noise, e.g. an internal reference code, exact-matched
+// against nothing) was this exact-vs-loose mismatch between the two.
 const OTHER_APPS_MAX = 4;
 function otherAppsAtCompany(entries, company, excludeUrl) {
   if (!company) return [];
-  const c = company.toLowerCase();
   const excludeKey = normalizeUrl(excludeUrl);
   return entries.filter(e =>
-    e.company && e.company.toLowerCase() === c && normalizeUrl(e.url) !== excludeKey);
+    e.company && companyNamesLooselyMatch(company, e.company) && normalizeUrl(e.url) !== excludeKey);
 }
 
 function otherAppsHtml(company, others) {
@@ -435,12 +440,12 @@ async function init() {
         });
         const jsonLd = result?.result;
         if (jsonLd?.role && jsonLd?.company) {
-          info = { role: capitalizeWords(jsonLd.role), company: jsonLd.company };
+          info = { role: capitalizeWords(jsonLd.role), company: stripLeadingOrgCode(jsonLd.company) };
         } else if (jsonLd?.company && !info.company) {
           // Organization-only fallback (no JobPosting node) — fill in just
           // the company, keep the title-derived role since there's nothing
           // better to replace it with.
-          info = { ...info, company: jsonLd.company };
+          info = { ...info, company: stripLeadingOrgCode(jsonLd.company) };
         }
       } catch { /* scripting not available on this page — keep the title-based guess */ }
       renderSaveForm(tab.url, info, entries);

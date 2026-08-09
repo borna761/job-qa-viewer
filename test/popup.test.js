@@ -62,6 +62,21 @@ test('otherAppsAtCompany returns [] when company is empty', () => {
   assert.deepEqual(popup.otherAppsAtCompany([{ company: 'Acme', url: 'x' }], '', 'y'), []);
 });
 
+test('otherAppsAtCompany: matches loosely (substring), not just exact equality', () => {
+  // Regression: background.js's own "other applications at this company"
+  // toolbar badge already used a loose match — a company whose detected
+  // name carries extra noise (e.g. a verbose JSON-LD legal name) exact-
+  // matched against nothing, so the badge showed but the popup's own
+  // "Also at X" box silently didn't, even though both were asking the same
+  // question about the same tracked entries.
+  const entries = [
+    { company: 'Acme Manufacturing A/S', url: 'https://example.com/job/2', role: 'Eng', stage: 'Interviews' },
+  ];
+  const popup = loadPopup();
+  const result = popup.otherAppsAtCompany(entries, 'Acme', 'https://example.com/job/1');
+  assert.deepEqual(result.map(e => e.url), ['https://example.com/job/2']);
+});
+
 test('otherAppsHtml renders up to OTHER_APPS_MAX entries and a "+N more" tail', () => {
   const popup = loadPopup();
   const many = Array.from({ length: 6 }, (_, i) => ({ role: `Role ${i}`, stage: 'Applied' }));
@@ -237,4 +252,22 @@ test('init: an Organization-only JSON-LD fills in just the company, keeping the 
   await popup.init();
   assert.equal(global.document.getElementById('inp-company').value, 'Acme (Org Node)');
   assert.notEqual(global.document.getElementById('inp-role').value, '');
+});
+
+test('init: strips a leading numeric reference code from a JobPosting JSON-LD company name', async () => {
+  const popup = loadPopup({
+    activeTab: { id: 1, url: 'https://jobs.lever.co/acme/xyz', title: 'Some Misleading Title' },
+    executeScript: async () => [{ result: { role: 'staff engineer', company: '4521 Acme Manufacturing A/S' } }],
+  });
+  await popup.init();
+  assert.equal(global.document.getElementById('inp-company').value, 'Acme Manufacturing A/S');
+});
+
+test('init: strips a leading numeric reference code from an Organization-only JSON-LD company name too', async () => {
+  const popup = loadPopup({
+    activeTab: { id: 1, url: 'https://example.com/careers/some-role', title: 'Some Role - Not Acme' },
+    executeScript: async () => [{ result: { company: '4521 Acme Manufacturing A/S' } }],
+  });
+  await popup.init();
+  assert.equal(global.document.getElementById('inp-company').value, 'Acme Manufacturing A/S');
 });
