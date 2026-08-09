@@ -6,14 +6,13 @@
 const fs = require('fs');
 const path = require('path');
 const { JSDOM } = require('jsdom');
+const { freshRequireAbsolute } = require('./freshRequireAbsolute');
 
 const ROOT = path.join(__dirname, '..');
 const HTML = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 
 function freshRequire(file) {
-  const full = path.join(ROOT, file);
-  delete require.cache[require.resolve(full)];
-  return require(full);
+  return freshRequireAbsolute(path.join(ROOT, file));
 }
 
 // jsdom parses <script> tags but never executes them (no runScripts option
