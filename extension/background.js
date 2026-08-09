@@ -171,13 +171,15 @@ function decideTabIconState(url, title, serverOnline, urlMap) {
   const match = key ? urlMap.get(key) : null;
 
   if (match) {
-    // Other tracked entries at the same company, excluding this one. Both
-    // sides here are real saved company names (not a title/URL guess), so
-    // this is an exact case-insensitive comparison, unlike the loose match
-    // used below for the untracked case.
-    const matchCompany = match.company.toLowerCase();
+    // Other tracked entries at the same company, excluding this one. Uses
+    // the same companyNamesLooselyMatch as the untracked case below, not
+    // exact equality — two tracked entries for the same real company aren't
+    // guaranteed to have byte-identical saved company strings (e.g. one
+    // carrying extra noise a JSON-LD source supplied, like a reference-code
+    // prefix), so exact-matching "real saved" names against each other can
+    // miss a genuine match just as easily as a title/URL guess can.
     const hasOtherAtCompany = [...urlMap.entries()]
-      .some(([k, v]) => k !== key && v.company && v.company.toLowerCase() === matchCompany);
+      .some(([k, v]) => k !== key && v.company && companyNamesLooselyMatch(match.company, v.company));
     return {
       icon: { variant: 'stage', stage: match.stage, badge: hasOtherAtCompany },
       title: hasOtherAtCompany

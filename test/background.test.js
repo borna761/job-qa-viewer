@@ -76,6 +76,23 @@ test('decideTabIconState: exact tracked match, other applications at the same co
   );
 });
 
+test('decideTabIconState: exact tracked match, another tracked entry at the same company has a differently-formatted saved name', () => {
+  // Regression: two tracked entries for the same real company aren't
+  // guaranteed to have byte-identical saved company strings (e.g. one
+  // carrying extra noise like a reference-code prefix a JSON-LD source
+  // supplied) — this used to require exact equality here, so a real
+  // "other applications at this company" case could go unflagged.
+  const bg = loadBackground();
+  const urlMap = new Map([
+    ['example.com/job/1', { company: 'Acme', stage: 'Applied' }],
+    ['example.com/job/2', { company: 'Acme Manufacturing A/S', stage: 'Interviews' }],
+  ]);
+  assert.deepEqual(
+    bg.decideTabIconState('https://example.com/job/1', 'irrelevant', true, urlMap),
+    { icon: { variant: 'stage', stage: 'Applied', badge: true }, title: 'Acme — Applied (other applications tracked too)' },
+  );
+});
+
 test('decideTabIconState: untracked posting, but the company matches a tracked entry (loose match)', () => {
   const bg = loadBackground();
   // "acme" (URL-derived, via a Lever-style host) loosely matches saved "Acme Corp".
