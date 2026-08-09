@@ -91,8 +91,18 @@ function extractFromKnownAtsUrl(pageTitle, tabUrl) {
   // check below that returns before ever reaching either /job/ branch, so
   // this guard is mostly relevant for other opaque-ID platforms sharing the
   // same URL shape.
+  // The trailing "_<requisition id>" suffix isn't always "_R<digits>" —
+  // some tenants use a bespoke alphanumeric code instead (observed: a real
+  // posting whose ID was digits-then-letters-then-digits, e.g. "_12CD34567",
+  // plus a "-2" repost/revision suffix, which the old "_[Rr]\d+"-only
+  // pattern left stuck onto the role). Workday's own convention reserves
+  // "_" in this segment for the requisition ID, never for role text, so
+  // it's safe to strip any trailing "_<code containing a digit>" here
+  // regardless of its exact shape — except a bare single character (e.g.
+  // "_2"), which is more likely a role's own level number than a real
+  // requisition ID; real IDs are always at least 2 characters.
   const roleFromJobSlug = () => {
-    const m = u.pathname.match(/\/job\/(?:[^/]+\/)?([^/]+?)(?:_[Rr]\d+)?(?:\/|$)/);
+    const m = u.pathname.match(/\/job\/(?:[^/]+\/)?([^/]+?)(?:_(?:[A-Za-z0-9]+\d[A-Za-z0-9]*|\d[A-Za-z0-9]+)(?:-\d+)?)?(?:\/|$)/);
     return (m && !m[1].includes('=')) ? titleCase(m[1]) : null;
   };
 
@@ -123,7 +133,7 @@ function extractFromKnownAtsUrl(pageTitle, tabUrl) {
           if (role) return { role, company: lastPart.trim() };
         }
       }
-      return { role: null, company: slug };
+      return { role: null, company: titleCase(slug) };
     }
   }
 
@@ -139,12 +149,12 @@ function extractFromKnownAtsUrl(pageTitle, tabUrl) {
   // originally written for), so pull role from there too rather than
   // leaving it null and losing a signal the URL already provides.
   if (/(^|\.)(myworkdayjobs\.com|myworkday\.com)$/.test(host))
-    return { role: roleFromJobSlug(), company: host.split('.')[0] };
+    return { role: roleFromJobSlug(), company: titleCase(host.split('.')[0]) };
 
   // Loxo tenants — acme.app.loxo.co: same tenant-subdomain shape as
   // Workday above, so the same "first label" extraction applies.
   if (/(^|\.)app\.loxo\.co$/.test(host))
-    return { role: null, company: host.split('.')[0] };
+    return { role: null, company: titleCase(host.split('.')[0]) };
 
   // Rippling ATS — ats.rippling.com/{locale}/{company}/jobs/{uuid}, where
   // the locale segment (e.g. en-CA) is often but not always present. The

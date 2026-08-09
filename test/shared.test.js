@@ -45,19 +45,19 @@ test('companyNamesLooselyMatch: guards against trivial short-name false positive
 test('extractFromKnownAtsUrl: Lever/Ashby/Greenhouse use the company-as-first-path-segment shape', () => {
   assert.deepEqual(
     extractFromKnownAtsUrl(null, 'https://jobs.lever.co/acme/f8250782-ea79-41ed-93b5-b2f93668218c'),
-    { role: null, company: 'acme' },
+    { role: null, company: 'Acme' },
   );
   assert.deepEqual(
     extractFromKnownAtsUrl(null, 'https://jobs.ashbyhq.com/acme/abc-123'),
-    { role: null, company: 'acme' },
+    { role: null, company: 'Acme' },
   );
   assert.deepEqual(
     extractFromKnownAtsUrl(null, 'https://boards.greenhouse.io/acme/jobs/1234567'),
-    { role: null, company: 'acme' },
+    { role: null, company: 'Acme' },
   );
   assert.deepEqual(
     extractFromKnownAtsUrl(null, 'https://job-boards.greenhouse.io/acme/jobs/1234567'),
-    { role: null, company: 'acme' },
+    { role: null, company: 'Acme' },
   );
 });
 
@@ -78,29 +78,58 @@ test('extractFromKnownAtsUrl: Kula.ai cross-checks the URL slug against the titl
 test('extractFromKnownAtsUrl: Kula.ai falls back to slug-only when the title doesn\'t corroborate it', () => {
   assert.deepEqual(
     extractFromKnownAtsUrl('Product Manager - Northwind', 'https://careers.kula.ai/acme/123'),
-    { role: null, company: 'acme' },
+    { role: null, company: 'Acme' },
   );
   assert.deepEqual(
     extractFromKnownAtsUrl('Product Manager', 'https://careers.kula.ai/acme/123'), // no dash at all
-    { role: null, company: 'acme' },
+    { role: null, company: 'Acme' },
   );
   assert.deepEqual(
     extractFromKnownAtsUrl(null, 'https://careers.kula.ai/acme/123'), // no title at all
-    { role: null, company: 'acme' },
+    { role: null, company: 'Acme' },
   );
 });
 
 test('extractFromKnownAtsUrl: Workday tenants pull role from the /job/ slug too, not just company', () => {
   assert.deepEqual(
     extractFromKnownAtsUrl(null, 'https://acme.wd1.myworkdayjobs.com/en-US/acme_careers/job/Remote/Product-Manager_R123'),
-    { role: 'Product Manager', company: 'acme' },
+    { role: 'Product Manager', company: 'Acme' },
   );
 });
 
 test('extractFromKnownAtsUrl: Workday tenant with no /job/ slug in the path still gets company, role null', () => {
   assert.deepEqual(
     extractFromKnownAtsUrl(null, 'https://acme.myworkday.com/careers/openings'),
-    { role: null, company: 'acme' },
+    { role: null, company: 'Acme' },
+  );
+});
+
+test('extractFromKnownAtsUrl: Workday requisition IDs that don\'t start with "R" still get stripped from the role', () => {
+  // Not every tenant's requisition ID follows the "_R<digits>" shape the
+  // original regex assumed — some are a bespoke alphanumeric code (here,
+  // digits-then-letters-then-digits) with a trailing "-<n>" repost/revision
+  // suffix. A real posting had this exact shape and the old regex left the
+  // whole ID stuck onto the role instead of stripping it.
+  assert.deepEqual(
+    extractFromKnownAtsUrl(
+      null,
+      'https://acme.wd1.myworkdayjobs.com/en-US/acme_careers/job/Remote/Staff-Engineer---Developer-Platform_12CD34567-2',
+    ),
+    { role: 'Staff Engineer   Developer Platform', company: 'Acme' },
+  );
+});
+
+test('extractFromKnownAtsUrl: a bare trailing "_<digit>" is kept as role text, not mistaken for a requisition ID', () => {
+  // Real requisition IDs are always more than a single character (e.g.
+  // "R123", "26WD97546") — a lone trailing "_2" is far more likely to be
+  // part of the role itself (a level number) than an ID, so the strip
+  // regex requires at least 2 characters in the code before it fires.
+  assert.deepEqual(
+    extractFromKnownAtsUrl(
+      null,
+      'https://acme.wd1.myworkdayjobs.com/en-US/acme_careers/job/Remote/Software-Engineer_2',
+    ),
+    { role: 'Software Engineer 2', company: 'Acme' },
   );
 });
 
@@ -115,7 +144,7 @@ test('extractFromKnownAtsUrl: Workday host match is anchored, not a bare suffix 
 test('extractFromKnownAtsUrl: Loxo tenants (acme.app.loxo.co)', () => {
   assert.deepEqual(
     extractFromKnownAtsUrl(null, 'https://acme.app.loxo.co/job/NDI0NzQtNjE4Y2FyaHRqYWZueXJ1dQ=='),
-    { role: null, company: 'acme' },
+    { role: null, company: 'Acme' },
   );
 });
 
@@ -276,7 +305,7 @@ test('extractJobInfo: falls back to the URL-derived company only when the title 
   // handling at all), not a regression risk against prior behavior.
   assert.deepEqual(
     extractJobInfo('', 'https://acme.app.loxo.co/job/NDI0NzQtNjE4Y2FyaHRqYWZueXJ1dQ=='),
-    { role: '', company: 'acme' },
+    { role: '', company: 'Acme' },
   );
 });
 
@@ -302,7 +331,7 @@ test('extractJobInfo: Workday posting resolves both role and company from the UR
       'breadcrumb noise unrelated to the role',
       'https://acme.wd1.myworkdayjobs.com/en-US/acme_careers/job/Remote/Product-Manager_R123',
     ),
-    { role: 'Product Manager', company: 'acme' },
+    { role: 'Product Manager', company: 'Acme' },
   );
 });
 
@@ -333,7 +362,7 @@ test('extractJobInfo: Wellfound (no known-ATS URL match) still gets the bullet-s
 test('guessCompanyFromTab: always prefers the URL-derived company when a known ATS host matches', () => {
   // Unlike extractJobInfo, there's no role to weigh a title-derived company
   // against here, so the known-ATS-URL company wins unconditionally.
-  assert.equal(guessCompanyFromTab('irrelevant title', 'https://northwind.app.loxo.co/job/NDI0NzQtNjE4Y2FyaHRqYWZueXJ1dQ=='), 'northwind');
+  assert.equal(guessCompanyFromTab('irrelevant title', 'https://northwind.app.loxo.co/job/NDI0NzQtNjE4Y2FyaHRqYWZueXJ1dQ=='), 'Northwind');
   assert.equal(guessCompanyFromTab('Product Owner', 'https://ats.rippling.com/en-CA/acme/jobs/uuid'), 'Acme');
 });
 
