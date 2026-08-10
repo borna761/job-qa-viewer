@@ -226,7 +226,16 @@ function parseJobTitleFallback(pageTitle, tabUrl, knownHost) {
   }
 
   const title = (pageTitle || '')
-    .replace(/\s*[-|]\s*(LinkedIn|Greenhouse|Lever|Workday|Indeed|Glassdoor|Jobs|Careers|Wellfound)[^|]*$/i, '')
+    // Proper platform brand names are never legitimately followed by more
+    // real content, so stripping the name plus everything after it is safe.
+    .replace(/\s*[-|]\s*(LinkedIn|Greenhouse|Lever|Workday|Indeed|Glassdoor|Wellfound)[^|]*$/i, '')
+    // "Jobs"/"Careers" are common enough words that they can also appear
+    // mid-title as part of the actual content (e.g. hrmdirect-hosted pages:
+    // "Role - Careers At Company") — only strip them here when nothing
+    // meaningful follows, unlike the greedy strip above. The "Careers
+    // At Company" case itself is handled by its own pattern below, before
+    // this title is used for anything else.
+    .replace(/\s*[-|]\s*(Jobs|Careers)\s*$/i, '')
     .trim();
   if (!title) return { role: '', company: '' };
 
@@ -237,6 +246,13 @@ function parseJobTitleFallback(pageTitle, tabUrl, knownHost) {
   // conventions, so it's safe to cut there regardless of which pattern below
   // matched.
   const cleanCompany = s => s.split(/\s*•\s*/)[0].trim();
+
+  // "Role - Careers At Company" / "Role - Jobs At Company" — the title
+  // convention hrmdirect-hosted career pages use. Checked before the
+  // generic "at"-match below, which would otherwise split on this same
+  // " At " but leave a dangling "- Careers"/"- Jobs" stuck onto the role.
+  const careersAtMatch = title.match(/^(.+?)\s*[-|]\s*(?:careers|jobs)\s+at\s+(.+)$/i);
+  if (careersAtMatch) return { role: careersAtMatch[1].trim(), company: cleanCompany(careersAtMatch[2]) };
 
   const atMatch = title.match(/^(.+?)\s+at\s+(.+)$/i);
   if (atMatch) return { role: atMatch[1].trim(), company: cleanCompany(atMatch[2]) };

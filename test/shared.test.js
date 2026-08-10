@@ -249,6 +249,32 @@ test('parseJobTitleFallback: known site-name suffixes get stripped before matchi
   );
 });
 
+test('parseJobTitleFallback: "Role - Careers At Company" (hrmdirect-style) splits cleanly, unlike the generic suffix strip', () => {
+  // Regression: the generic site-suffix stripper used to treat "Careers"
+  // the same as a real platform brand name (LinkedIn, Indeed, ...) and
+  // strip it plus everything after it — including the actual company name
+  // that followed "Careers At" on a real reported posting.
+  assert.deepEqual(
+    parseJobTitleFallback('Product Engineer - Careers At Acme', 'https://acme.hrmdirect.com/x'),
+    { role: 'Product Engineer', company: 'Acme' },
+  );
+  assert.deepEqual(
+    parseJobTitleFallback('Senior Engineer - Jobs At Acme', 'https://acme.hrmdirect.com/x'),
+    { role: 'Senior Engineer', company: 'Acme' },
+  );
+});
+
+test('parseJobTitleFallback: a bare trailing "- Careers"/"- Jobs" with nothing after is still stripped cleanly', () => {
+  assert.deepEqual(
+    parseJobTitleFallback('Product Manager - Careers', 'https://example.com/x'),
+    { role: 'Product Manager', company: '' },
+  );
+  assert.deepEqual(
+    parseJobTitleFallback('Product Manager | Jobs', 'https://example.com/x'),
+    { role: 'Product Manager', company: '' },
+  );
+});
+
 test('parseJobTitleFallback: empty/falsy title returns empty role and company', () => {
   assert.deepEqual(parseJobTitleFallback('', 'https://example.com/x'), { role: '', company: '' });
   assert.deepEqual(parseJobTitleFallback(null, 'https://example.com/x'), { role: '', company: '' });
