@@ -271,3 +271,18 @@ test('init: strips a leading numeric reference code from an Organization-only JS
   await popup.init();
   assert.equal(global.document.getElementById('inp-company').value, 'Acme Manufacturing A/S');
 });
+
+test('init: an Organization-only JSON-LD company overrides a wrong (not just missing) title-derived guess', async () => {
+  // Regression: a real reported posting's tab title was a 3-segment
+  // breadcrumb ("Careers | Job Openings | Acme") — the title parser's naive
+  // first-pipe split produced a non-empty but wrong company ("Job Openings |
+  // Acme"), which used to block the page's own (correct) Organization
+  // JSON-LD name from ever overriding it, since the fallback only filled in
+  // a *missing* company, not a wrong one.
+  const popup = loadPopup({
+    activeTab: { id: 1, url: 'https://example.com/careers/', title: 'Careers | Job Openings | Acme' },
+    executeScript: async () => [{ result: { company: 'Acme' } }],
+  });
+  await popup.init();
+  assert.equal(global.document.getElementById('inp-company').value, 'Acme');
+});

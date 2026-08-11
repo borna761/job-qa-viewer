@@ -441,10 +441,17 @@ async function init() {
         const jsonLd = result?.result;
         if (jsonLd?.role && jsonLd?.company) {
           info = { role: capitalizeWords(jsonLd.role), company: stripLeadingOrgCode(jsonLd.company) };
-        } else if (jsonLd?.company && !info.company) {
-          // Organization-only fallback (no JobPosting node) — fill in just
-          // the company, keep the title-derived role since there's nothing
-          // better to replace it with.
+        } else if (jsonLd?.company) {
+          // Organization-only fallback (no JobPosting node) — always trust
+          // it over the title-derived company guess, not just when that
+          // guess came back empty. A multi-segment breadcrumb title (e.g.
+          // "Careers | Job Openings | Acme") can produce a non-empty but
+          // wrong company from the naive first-pipe split; the page's own
+          // Organization JSON-LD is more reliable whenever it's present at
+          // all (it's already gated to job/careers-shaped URLs above, so
+          // this isn't trusting it unconditionally everywhere). Role stays
+          // title-derived either way — there's nothing better to replace it
+          // with here.
           info = { ...info, company: stripLeadingOrgCode(jsonLd.company) };
         }
       } catch { /* scripting not available on this page — keep the title-based guess */ }
