@@ -36,39 +36,62 @@ function stageBadge(stage) {
   return `<span class="stage-badge" style="background:${bg};color:${color}">${esc(stage)}</span>`;
 }
 
-// Read role/company from the page's JobPosting JSON-LD, when present. This is
+// Read role/company from the page's JobPosting JSON-LD, when present, and
+// detect a same-tab iframe embedding a known ATS's hosted job page. This is
 // injected into the tab via chrome.scripting.executeScript, so it must be a
-// self-contained function (no closures over the outer scope).
+// self-contained function (no closures over the outer scope) — atsHosts is
+// passed in via args for the same reason renderSaveForm's own injected
+// function takes it as a parameter (see there for why).
 //
-// Returns {role, company} for a full JobPosting match. Falls back to
-// {company} alone (no role) when there's no JobPosting node but there is an
-// Organization one — common on WordPress/Yoast-SEO-powered career pages,
-// which expose a site-wide @graph (WebPage/WebSite/Organization) instead of
-// job-specific schema, sometimes not even for the current route (observed on
-// a client-rendered ATS page whose JSON-LD still described an unrelated
-// "Privacy Policy" WebPage — the Organization name was still trustworthy,
-// the WebPage wasn't). An Organization node is common on almost any page
-// though, so this is gated to URLs that look like a job posting — using it
+// Always returns an object (never null), so embeddedJobUrl is available to
+// the caller even when nothing else was found. role+company come from a
+// full JobPosting match when present. Falls back to company alone (no role)
+// when there's no JobPosting node but there is an Organization one — common
+// on WordPress/Yoast-SEO-powered career pages, which expose a site-wide
+// @graph (WebPage/WebSite/Organization) instead of job-specific schema,
+// sometimes not even for the current route (observed on a client-rendered
+// ATS page whose JSON-LD still described an unrelated "Privacy Policy"
+// WebPage — the Organization name was still trustworthy, the WebPage
+// wasn't). An Organization node is common on almost any page though, so
+// this is gated to URLs that look like a job posting — using it
 // unconditionally would fabricate a company guess on completely unrelated
 // pages. The caller keeps its own title-derived role in this case.
-function readJobPostingJsonLd() {
+function readJobPostingJsonLd(atsHosts) {
   const scripts = document.querySelectorAll('script[type="application/ld+json"]');
   let orgName = null;
+  let jobPosting = null;
   for (const s of scripts) {
     let json;
     try { json = JSON.parse(s.textContent); } catch { continue; }
     const nodes = Array.isArray(json) ? json : (json['@graph'] || [json]);
     for (const node of nodes) {
-      if (node && node['@type'] === 'JobPosting') {
+      if (!jobPosting && node && node['@type'] === 'JobPosting') {
         const role = node.title;
         const company = node.hiringOrganization && node.hiringOrganization.name;
-        if (role && company) return { role, company };
+        if (role && company) jobPosting = { role, company };
       }
       if (node && node['@type'] === 'Organization' && node.name) orgName = node.name;
     }
+    if (jobPosting) break;
   }
-  if (orgName && /\/(jobs?|careers?)(\/|$)/i.test(location.pathname)) return { company: orgName };
-  return null;
+
+  // Many company career pages embed Ashby/Greenhouse/Lever/Workday this way
+  // rather than linking straight to the ATS. Cross-origin iframe *content*
+  // isn't reachable from here, but src is just an HTML attribute (always
+  // readable) — the server fetches it independently to resolve role/company
+  // when the top-level page itself has neither, as is typical for this
+  // pattern (the embedding page is usually just marketing/culture content).
+  let embeddedJobUrl = null;
+  for (const f of document.querySelectorAll('iframe[src]')) {
+    try {
+      const host = new URL(f.src, location.href).hostname;
+      if (atsHosts.some(h => host === h || host.endsWith('.' + h))) { embeddedJobUrl = f.src; break; }
+    } catch {}
+  }
+
+  if (jobPosting) return { ...jobPosting, embeddedJobUrl };
+  if (orgName && /\/(jobs?|careers?)(\/|$)/i.test(location.pathname)) return { company: orgName, embeddedJobUrl };
+  return { embeddedJobUrl };
 }
 
 // app.notion.com/native/p/{id} is Notion's own app-launch bridge page (what
@@ -437,22 +460,44 @@ async function init() {
         const [result] = await chrome.scripting.executeScript({
           target: { tabId: tab.id },
           func: readJobPostingJsonLd,
+          args: [KNOWN_ATS_HOSTS],
         });
         const jsonLd = result?.result;
         if (jsonLd?.role && jsonLd?.company) {
           info = { role: capitalizeWords(jsonLd.role), company: stripLeadingOrgCode(jsonLd.company) };
-        } else if (jsonLd?.company) {
-          // Organization-only fallback (no JobPosting node) — always trust
-          // it over the title-derived company guess, not just when that
-          // guess came back empty. A multi-segment breadcrumb title (e.g.
-          // "Careers | Job Openings | Acme") can produce a non-empty but
-          // wrong company from the naive first-pipe split; the page's own
-          // Organization JSON-LD is more reliable whenever it's present at
-          // all (it's already gated to job/careers-shaped URLs above, so
-          // this isn't trusting it unconditionally everywhere). Role stays
-          // title-derived either way — there's nothing better to replace it
-          // with here.
-          info = { ...info, company: stripLeadingOrgCode(jsonLd.company) };
+        } else {
+          // No usable JobPosting on the top-level page itself. If it embeds
+          // a known ATS's hosted job page in an iframe (common: a company
+          // careers page is mostly marketing/culture content, with the
+          // actual posting living behind an Ashby/Greenhouse/Lever/Workday
+          // iframe) — that iframe's own JobPosting JSON-LD is more reliable
+          // than this page's generic Organization node or a title guess, so
+          // try it first. Cross-origin iframe *content* isn't reachable
+          // from the content script, so the server fetches it independently
+          // (same allow-listed-host validation as the description-fetch
+          // path already uses for embeddedJobUrl).
+          let embedded = null;
+          if (jsonLd?.embeddedJobUrl) {
+            try {
+              const res = await fetch(`${API}/api/tracker/resolve-embedded-job-info?url=${encodeURIComponent(jsonLd.embeddedJobUrl)}`);
+              if (res.ok) embedded = await res.json();
+            } catch { /* server unreachable or the fetch itself failed — fall through */ }
+          }
+          if (embedded?.role && embedded?.company) {
+            info = { role: capitalizeWords(embedded.role), company: stripLeadingOrgCode(embedded.company) };
+          } else if (jsonLd?.company) {
+            // Organization-only fallback (no JobPosting node) — always trust
+            // it over the title-derived company guess, not just when that
+            // guess came back empty. A multi-segment breadcrumb title (e.g.
+            // "Careers | Job Openings | Acme") can produce a non-empty but
+            // wrong company from the naive first-pipe split; the page's own
+            // Organization JSON-LD is more reliable whenever it's present at
+            // all (it's already gated to job/careers-shaped URLs above, so
+            // this isn't trusting it unconditionally everywhere). Role stays
+            // title-derived either way — there's nothing better to replace
+            // it with here.
+            info = { ...info, company: stripLeadingOrgCode(jsonLd.company) };
+          }
         }
       } catch { /* scripting not available on this page — keep the title-based guess */ }
       renderSaveForm(tab.url, info, entries);
