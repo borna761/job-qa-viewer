@@ -21,7 +21,7 @@ const {
 } = require('./lib/email');
 const {
   htmlToNotionBlocks, plainTextToNotionBlocks, blocksToHtml,
-  isAllowedEmbeddedJobUrl, fetchAndExtractBlocks,
+  isAllowedEmbeddedJobUrl, fetchAndExtractBlocks, fetchAndExtractRoleCompany,
 } = require('./lib/notionHtml');
 
 const app = express();
@@ -297,6 +297,22 @@ app.post('/api/tracker/save', express.json({ limit: '5mb' }), async (req, res) =
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
+});
+
+// Resolves the real role/company for a posting that lives entirely behind a
+// cross-origin iframe (e.g. a company careers page embedding an Ashby/
+// Greenhouse/Lever/Workday board) — the extension's content script can only
+// read the iframe's src, not its content, so it calls this before rendering
+// the save form when the top-level page has no usable JobPosting JSON-LD of
+// its own. Same allow-listed-host validation as /api/tracker/save's own use
+// of embeddedJobUrl, since this also fetches a URL named by client input.
+app.get('/api/tracker/resolve-embedded-job-info', async (req, res) => {
+  const { url } = req.query;
+  if (typeof url !== 'string' || !isAllowedEmbeddedJobUrl(url))
+    return res.status(400).json({ error: 'Invalid or disallowed URL' });
+  const info = await fetchAndExtractRoleCompany(url);
+  if (!info) return res.status(404).json({ error: 'No JobPosting data found' });
+  res.json(info);
 });
 
 // -- Tracker routes --

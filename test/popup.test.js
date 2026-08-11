@@ -286,3 +286,85 @@ test('init: an Organization-only JSON-LD company overrides a wrong (not just mis
   await popup.init();
   assert.equal(global.document.getElementById('inp-company').value, 'Acme');
 });
+
+// ---- readJobPostingJsonLd (real DOM via jsdom, called directly) ----
+
+test('readJobPostingJsonLd: returns embeddedJobUrl: null when there\'s no JSON-LD and no embedded ATS iframe', () => {
+  const popup = loadPopup();
+  assert.deepEqual(popup.readJobPostingJsonLd(KNOWN_ATS_HOSTS), { embeddedJobUrl: null });
+});
+
+test('readJobPostingJsonLd: a full JobPosting node wins, embeddedJobUrl still reported alongside it', () => {
+  const popup = loadPopup();
+  global.document.body.innerHTML = `
+    <script type="application/ld+json">{"@type":"JobPosting","title":"Product Engineer","hiringOrganization":{"name":"Acme"}}</script>
+    <iframe src="https://jobs.ashbyhq.com/Acme/abc-123"></iframe>
+  `;
+  assert.deepEqual(popup.readJobPostingJsonLd(KNOWN_ATS_HOSTS), {
+    role: 'Product Engineer', company: 'Acme', embeddedJobUrl: 'https://jobs.ashbyhq.com/Acme/abc-123',
+  });
+});
+
+test('readJobPostingJsonLd: detects an embedded known-ATS iframe when there\'s no usable top-frame JSON-LD', () => {
+  const popup = loadPopup(undefined, { url: 'https://example.com/careers/' });
+  global.document.body.innerHTML = '<iframe src="https://jobs.ashbyhq.com/Acme/abc-123"></iframe>';
+  assert.deepEqual(popup.readJobPostingJsonLd(KNOWN_ATS_HOSTS), {
+    embeddedJobUrl: 'https://jobs.ashbyhq.com/Acme/abc-123',
+  });
+});
+
+test('readJobPostingJsonLd: an iframe whose host isn\'t a known ATS is ignored', () => {
+  const popup = loadPopup();
+  global.document.body.innerHTML = '<iframe src="https://www.youtube.com/embed/xyz"></iframe>';
+  assert.deepEqual(popup.readJobPostingJsonLd(KNOWN_ATS_HOSTS), { embeddedJobUrl: null });
+});
+
+test('readJobPostingJsonLd: Organization-only fallback still reports embeddedJobUrl too', () => {
+  const popup = loadPopup(undefined, { url: 'https://example.com/careers/' });
+  global.document.body.innerHTML = `
+    <script type="application/ld+json">{"@type":"Organization","name":"Acme"}</script>
+    <iframe src="https://boards.greenhouse.io/acme"></iframe>
+  `;
+  assert.deepEqual(popup.readJobPostingJsonLd(KNOWN_ATS_HOSTS), {
+    company: 'Acme', embeddedJobUrl: 'https://boards.greenhouse.io/acme',
+  });
+});
+
+// ---- init(): resolving role/company from an embedded ATS iframe ----
+
+test('init: resolves role/company from the server when the page embeds a known ATS iframe with no usable top-frame JSON-LD', async () => {
+  let requestedUrl = null;
+  const popup = loadPopup({
+    activeTab: { id: 1, url: 'https://example.com/careers/', title: 'Careers | Job Openings | Acme' },
+    executeScript: async () => [{ result: { embeddedJobUrl: 'https://jobs.ashbyhq.com/Acme/abc-123' } }],
+  });
+  global.fetch = async (url) => {
+    requestedUrl = url;
+    return { ok: true, json: async () => ({ role: 'Product Engineer', company: 'Acme' }) };
+  };
+  await popup.init();
+  assert.match(requestedUrl, /\/api\/tracker\/resolve-embedded-job-info\?url=/);
+  assert.match(requestedUrl, /jobs\.ashbyhq\.com/);
+  assert.equal(global.document.getElementById('inp-role').value, 'Product Engineer');
+  assert.equal(global.document.getElementById('inp-company').value, 'Acme');
+});
+
+test('init: falls back to Organization JSON-LD when the embedded-iframe resolution finds nothing', async () => {
+  const popup = loadPopup({
+    activeTab: { id: 1, url: 'https://example.com/careers/', title: 'Careers | Job Openings | Acme' },
+    executeScript: async () => [{ result: { company: 'Acme', embeddedJobUrl: 'https://jobs.ashbyhq.com/Acme/abc-123' } }],
+  });
+  global.fetch = async () => ({ ok: false, status: 404, json: async () => ({ error: 'No JobPosting data found' }) });
+  await popup.init();
+  assert.equal(global.document.getElementById('inp-company').value, 'Acme');
+});
+
+test('init: falls back gracefully when the embedded-resolution fetch itself fails (server unreachable)', async () => {
+  const popup = loadPopup({
+    activeTab: { id: 1, url: 'https://example.com/careers/', title: 'Careers | Job Openings | Acme' },
+    executeScript: async () => [{ result: { company: 'Acme', embeddedJobUrl: 'https://jobs.ashbyhq.com/Acme/abc-123' } }],
+  });
+  global.fetch = async () => { throw new Error('server unreachable'); };
+  await popup.init();
+  assert.equal(global.document.getElementById('inp-company').value, 'Acme');
+});
