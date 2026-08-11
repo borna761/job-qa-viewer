@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const {
   escHtml, richTextToHtml, blocksToHtml,
   htmlToNotionBlocks, plainTextToNotionBlocks,
-  extractJobPostingDescription, descriptionToBlocks,
+  extractJobPostingDescription, extractJobPostingRoleCompany, descriptionToBlocks,
   isAllowedEmbeddedJobUrl,
 } = require('../lib/notionHtml');
 
@@ -99,6 +99,35 @@ test('extractJobPostingDescription finds JobPosting in any ld+json block and dec
 test('extractJobPostingDescription returns empty string when no JobPosting present', () => {
   assert.equal(extractJobPostingDescription('<html><script type="application/ld+json">{"@type":"WebSite"}</script></html>'), '');
   assert.equal(extractJobPostingDescription('<html>no structured data</html>'), '');
+});
+
+// A page like jobs.ashbyhq.com/Acme/{id}: the real posting behind a
+// cross-origin iframe the extension's content script can't read into.
+const EMBEDDED_JOBPAGE_HTML = `
+<html><head>
+<script type="application/ld+json">{"@type":"WebSite","name":"Careers"}</script>
+<script type="application/ld+json">{"@type":"JobPosting","title":"Product Engineer",
+"hiringOrganization":{"@type":"Organization","name":"Acme"},"description":"About the role..."}</script>
+</head><body></body></html>`;
+
+test('extractJobPostingRoleCompany finds role+company in any ld+json block', () => {
+  assert.deepEqual(
+    extractJobPostingRoleCompany(EMBEDDED_JOBPAGE_HTML),
+    { role: 'Product Engineer', company: 'Acme' },
+  );
+});
+
+test('extractJobPostingRoleCompany returns null when there\'s a JobPosting but no hiringOrganization', () => {
+  // JOBPAGE_HTML's JobPosting has a title and description but no
+  // hiringOrganization — a role without a company isn't a usable result
+  // here (the caller already has other, weaker role signals to fall back
+  // to; it's the company that's genuinely hard to get elsewhere).
+  assert.equal(extractJobPostingRoleCompany(JOBPAGE_HTML), null);
+});
+
+test('extractJobPostingRoleCompany returns null when no JobPosting node is present at all', () => {
+  assert.equal(extractJobPostingRoleCompany('<html><script type="application/ld+json">{"@type":"WebSite"}</script></html>'), null);
+  assert.equal(extractJobPostingRoleCompany('<html>no structured data</html>'), null);
 });
 
 test('descriptionToBlocks turns a JobPosting description into clean blocks without page chrome', () => {
