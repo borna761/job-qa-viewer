@@ -275,6 +275,32 @@ test('parseJobTitleFallback: a bare trailing "- Careers"/"- Jobs" with nothing a
   );
 });
 
+test('parseJobTitleFallback: "Role — Company Careers" (em-dash, trailing "Careers" after the company) splits cleanly', () => {
+  // Regression: a real posting's title used an em-dash ("—"), not a plain
+  // hyphen, as the separator — every dash-aware pattern only recognized
+  // ASCII "-", so the whole title fell through every pattern unmatched,
+  // landing on the final fallback (role = the entire unparsed title,
+  // company = ''). This is the mirror image of the "Careers At Company"
+  // pattern above: here "Careers" trails the company instead of leading it.
+  assert.deepEqual(
+    parseJobTitleFallback('Senior Product Manager, Platform — Acme Careers', 'https://example.com/x'),
+    { role: 'Senior Product Manager, Platform', company: 'Acme' },
+  );
+});
+
+test('parseJobTitleFallback: em-dash and en-dash work everywhere a plain hyphen already did', () => {
+  // Same known-site-suffix and "Careers At" patterns as the tests above,
+  // just with an em-dash/en-dash separator instead of a plain hyphen.
+  assert.deepEqual(
+    parseJobTitleFallback('Product Manager at Acme — Greenhouse', 'https://example.com/x'),
+    { role: 'Product Manager', company: 'Acme' },
+  );
+  assert.deepEqual(
+    parseJobTitleFallback('Product Engineer – Careers At Acme', 'https://acme.hrmdirect.com/x'),
+    { role: 'Product Engineer', company: 'Acme' },
+  );
+});
+
 test('parseJobTitleFallback: empty/falsy title returns empty role and company', () => {
   assert.deepEqual(parseJobTitleFallback('', 'https://example.com/x'), { role: '', company: '' });
   assert.deepEqual(parseJobTitleFallback(null, 'https://example.com/x'), { role: '', company: '' });

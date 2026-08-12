@@ -225,17 +225,24 @@ function parseJobTitleFallback(pageTitle, tabUrl, knownHost) {
     try { host = new URL(tabUrl).hostname.replace(/^www\./, ''); } catch {}
   }
 
+  // Sites vary between a plain hyphen and an em/en-dash as the title
+  // separator (observed: a real posting's page used "—", an em-dash) —
+  // every dash-aware pattern below needs to recognize all three, same set
+  // lib/notion.js's parseTitleToApp already handles for the same reason, or
+  // a real title falls through every pattern unmatched.
+  const DASH = '[-|—–]'; // hyphen, pipe, em-dash, en-dash
+
   const title = (pageTitle || '')
     // Proper platform brand names are never legitimately followed by more
     // real content, so stripping the name plus everything after it is safe.
-    .replace(/\s*[-|]\s*(LinkedIn|Greenhouse|Lever|Workday|Indeed|Glassdoor|Wellfound)[^|]*$/i, '')
+    .replace(new RegExp(`\\s*${DASH}\\s*(LinkedIn|Greenhouse|Lever|Workday|Indeed|Glassdoor|Wellfound)[^|]*$`, 'i'), '')
     // "Jobs"/"Careers" are common enough words that they can also appear
     // mid-title as part of the actual content (e.g. hrmdirect-hosted pages:
     // "Role - Careers At Company") — only strip them here when nothing
     // meaningful follows, unlike the greedy strip above. The "Careers
-    // At Company" case itself is handled by its own pattern below, before
-    // this title is used for anything else.
-    .replace(/\s*[-|]\s*(Jobs|Careers)\s*$/i, '')
+    // At Company" and "Company Careers" cases themselves are handled by
+    // their own patterns below, before this title is used for anything else.
+    .replace(new RegExp(`\\s*${DASH}\\s*(Jobs|Careers)\\s*$`, 'i'), '')
     .trim();
   if (!title) return { role: '', company: '' };
 
@@ -251,8 +258,18 @@ function parseJobTitleFallback(pageTitle, tabUrl, knownHost) {
   // convention hrmdirect-hosted career pages use. Checked before the
   // generic "at"-match below, which would otherwise split on this same
   // " At " but leave a dangling "- Careers"/"- Jobs" stuck onto the role.
-  const careersAtMatch = title.match(/^(.+?)\s*[-|]\s*(?:careers|jobs)\s+at\s+(.+)$/i);
+  const careersAtMatch = title.match(new RegExp(`^(.+?)\\s*${DASH}\\s*(?:careers|jobs)\\s+at\\s+(.+)$`, 'i'));
   if (careersAtMatch) return { role: careersAtMatch[1].trim(), company: cleanCompany(careersAtMatch[2]) };
+
+  // "Role - Company Careers" / "Role - Company Jobs" — the mirror-image
+  // convention (e.g. a real reported posting's title ending in "Acme
+  // Careers", not "Careers At Acme"). Same reasoning as careersAtMatch:
+  // checked before the generic "at"-match, and before the plain trailing
+  // Jobs/Careers strip above ever had a chance to (correctly) leave this
+  // alone, since there's real content — the company — between the dash and
+  // "Careers"/"Jobs" here.
+  const companyCareersMatch = title.match(new RegExp(`^(.+?)\\s*${DASH}\\s*(.+?)\\s+(?:careers|jobs)\\s*$`, 'i'));
+  if (companyCareersMatch) return { role: companyCareersMatch[1].trim(), company: cleanCompany(companyCareersMatch[2]) };
 
   const atMatch = title.match(/^(.+?)\s+at\s+(.+)$/i);
   if (atMatch) return { role: atMatch[1].trim(), company: cleanCompany(atMatch[2]) };
