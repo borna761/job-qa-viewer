@@ -201,12 +201,52 @@ function extractFromKnownAtsUrl(pageTitle, tabUrl) {
 // superficial differences (a locale path prefix, a trailing slash, Workday's
 // redundant location segment in its job-id path) that don't change which
 // posting it actually is.
+//
+// Whether a path already contains a strong-looking unique identifier (a run
+// of 4+ digits, or a UUID). If so, the whole query string can be dropped
+// regardless of what's in it — the path alone already fully identifies the
+// posting (true for LinkedIn's own numeric job id, Ashby's UUID,
+// Greenhouse/Workday's numeric requisition id in the path, etc.).
+//
+// Checking this structurally, instead of hand-maintaining a list of every
+// platform's own id-bearing query param name, is what makes this safe
+// against LinkedIn's own tracking params specifically: trk/refId/
+// trackingId/eBP are a different, effectively random value on every single
+// visit to the exact same job (even reopening the same email digest link
+// twice) — naively keeping query strings by default would break
+// re-recognizing an already-tracked LinkedIn job just as unpredictably as
+// the bug below broke telling two different jobs apart.
+function pathHasStrongId(path) {
+  return /\d{4,}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(path);
+}
+
+// Stripped even when the query string is otherwise preserved below — known
+// pure tracking/referral noise, never part of a posting's identity.
+const NORMALIZE_URL_TRACKING_PARAMS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'src'];
+
 function normalizeUrl(raw) {
   try {
     const u = new URL(raw);
     let path = u.pathname.replace(/^\/[a-z]{2}-[a-z]{2}\//i, '/').replace(/\/$/, '');
     path = path.replace(/\/job\/[^/]+\/(.*_r\d+[^/]*)/i, '/job/$1');
-    return (u.hostname + path).toLowerCase();
+
+    let query = '';
+    if (!pathHasStrongId(path)) {
+      // The path alone doesn't disambiguate this posting from any other on
+      // the same host+path — the query string might be the only thing that
+      // does (observed: an hrmdirect-hosted career site using "?req=<id>",
+      // every posting on that site sharing the identical path). Dropping
+      // the whole query string unconditionally (this function's old
+      // behavior) silently collapsed two different tracked postings on the
+      // same host+path into one normalized key, so the popup showed one
+      // job's tracked status on a completely different job's page.
+      const params = new URLSearchParams(u.search);
+      for (const p of NORMALIZE_URL_TRACKING_PARAMS) params.delete(p);
+      params.sort();
+      query = params.toString();
+    }
+
+    return (u.hostname + path + (query ? '?' + query : '')).toLowerCase();
   } catch { return null; }
 }
 
