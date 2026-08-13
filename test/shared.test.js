@@ -44,7 +44,7 @@ test('companyNamesLooselyMatch: guards against trivial short-name false positive
 
 test('extractFromKnownAtsUrl: Lever/Ashby/Greenhouse use the company-as-first-path-segment shape', () => {
   assert.deepEqual(
-    extractFromKnownAtsUrl(null, 'https://jobs.lever.co/acme/f8250782-ea79-41ed-93b5-b2f93668218c'),
+    extractFromKnownAtsUrl(null, 'https://jobs.lever.co/acme/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'),
     { role: null, company: 'Acme' },
   );
   assert.deepEqual(
@@ -143,18 +143,18 @@ test('extractFromKnownAtsUrl: Workday host match is anchored, not a bare suffix 
 
 test('extractFromKnownAtsUrl: Loxo tenants (acme.app.loxo.co)', () => {
   assert.deepEqual(
-    extractFromKnownAtsUrl(null, 'https://acme.app.loxo.co/job/NDI0NzQtNjE4Y2FyaHRqYWZueXJ1dQ=='),
+    extractFromKnownAtsUrl(null, 'https://acme.app.loxo.co/job/OTk5OTktZmFrZWpvYmlkZmFrZWpvYg=='),
     { role: null, company: 'Acme' },
   );
 });
 
 test('extractFromKnownAtsUrl: Rippling strips an optional locale prefix before the company segment', () => {
   assert.deepEqual(
-    extractFromKnownAtsUrl('Product Owner', 'https://ats.rippling.com/en-CA/acme/jobs/58c02aff-0a95-4d82-b3c5-2f562be5cd22'),
+    extractFromKnownAtsUrl('Product Owner', 'https://ats.rippling.com/en-CA/acme/jobs/bbbbbbbb-cccc-dddd-eeee-ffffffffffff'),
     { role: 'Product Owner', company: 'Acme' },
   );
   assert.deepEqual(
-    extractFromKnownAtsUrl('Product Owner', 'https://ats.rippling.com/acme/jobs/58c02aff-0a95-4d82-b3c5-2f562be5cd22'),
+    extractFromKnownAtsUrl('Product Owner', 'https://ats.rippling.com/acme/jobs/bbbbbbbb-cccc-dddd-eeee-ffffffffffff'),
     { role: 'Product Owner', company: 'Acme' },
   );
 });
@@ -178,7 +178,7 @@ test('extractFromKnownAtsUrl: generic /job/ rejects an opaque base64 ID instead 
   // dedicated Loxo host check above) contains "=" padding, which never
   // appears in a real human-readable slug.
   assert.equal(
-    extractFromKnownAtsUrl(null, 'https://careers.example.com/job/NDI0NzQtNjE4Y2FyaHRqYWZueXJ1dQ=='),
+    extractFromKnownAtsUrl(null, 'https://careers.example.com/job/OTk5OTktZmFrZWpvYmlkZmFrZWpvYg=='),
     null,
   );
 });
@@ -357,8 +357,8 @@ test('normalizeUrl drops the whole query string when the path already has a stro
   // whether or not a tracked entry's URL happened to carry "?src=LinkedIn"
   // (a real one did) shouldn't matter.
   assert.equal(
-    normalizeUrl('https://jobs.ashbyhq.com/acme/f8250782-ea79-41ed-93b5-b2f93668218c?src=LinkedIn'),
-    normalizeUrl('https://jobs.ashbyhq.com/acme/f8250782-ea79-41ed-93b5-b2f93668218c'),
+    normalizeUrl('https://jobs.ashbyhq.com/acme/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee?src=LinkedIn'),
+    normalizeUrl('https://jobs.ashbyhq.com/acme/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'),
   );
 });
 
@@ -418,7 +418,7 @@ test('normalizeUrl ignores the hash fragment, and is insensitive to query-param 
 
 test('extractJobInfo: a real Loxo posting keeps the title-derived company over the URL slug', () => {
   assert.deepEqual(
-    extractJobInfo('Senior Product Manager | Northwind Co.', 'https://northwind.app.loxo.co/job/NDI0NzQtNjE4Y2FyaHRqYWZueXJ1dQ=='),
+    extractJobInfo('Senior Product Manager | Northwind Co.', 'https://northwind.app.loxo.co/job/OTk5OTktZmFrZWpvYmlkZmFrZWpvYg=='),
     { role: 'Senior Product Manager', company: 'Northwind Co.' },
   );
 });
@@ -428,7 +428,7 @@ test('extractJobInfo: falls back to the URL-derived company only when the title 
   // popup.js never had (it had no Loxo/Workday/Lever/Ashby/Greenhouse URL
   // handling at all), not a regression risk against prior behavior.
   assert.deepEqual(
-    extractJobInfo('', 'https://acme.app.loxo.co/job/NDI0NzQtNjE4Y2FyaHRqYWZueXJ1dQ=='),
+    extractJobInfo('', 'https://acme.app.loxo.co/job/OTk5OTktZmFrZWpvYmlkZmFrZWpvYg=='),
     { role: '', company: 'Acme' },
   );
 });
@@ -437,7 +437,7 @@ test('extractJobInfo: Ashby posting via the "@" title fallback keeps full title 
   assert.deepEqual(
     extractJobInfo(
       'Staff and Senior Product Manager (Multiple Roles, Multiple Teams) @ Acme Widgets',
-      'https://jobs.ashbyhq.com/acme/40d9a988-8944-4606-9ea1-51262e495768',
+      'https://jobs.ashbyhq.com/acme/cccccccc-dddd-eeee-ffff-000000000000',
     ),
     { role: 'Staff and Senior Product Manager (Multiple Roles, Multiple Teams)', company: 'Acme Widgets' },
   );
@@ -461,7 +461,7 @@ test('extractJobInfo: Workday posting resolves both role and company from the UR
 
 test('extractJobInfo: Rippling (URL-only company, title-only role) trusted outright', () => {
   assert.deepEqual(
-    extractJobInfo('Product Owner', 'https://ats.rippling.com/en-CA/acme/jobs/58c02aff-0a95-4d82-b3c5-2f562be5cd22'),
+    extractJobInfo('Product Owner', 'https://ats.rippling.com/en-CA/acme/jobs/bbbbbbbb-cccc-dddd-eeee-ffffffffffff'),
     { role: 'Product Owner', company: 'Acme' },
   );
 });
@@ -486,7 +486,7 @@ test('extractJobInfo: Wellfound (no known-ATS URL match) still gets the bullet-s
 test('guessCompanyFromTab: always prefers the URL-derived company when a known ATS host matches', () => {
   // Unlike extractJobInfo, there's no role to weigh a title-derived company
   // against here, so the known-ATS-URL company wins unconditionally.
-  assert.equal(guessCompanyFromTab('irrelevant title', 'https://northwind.app.loxo.co/job/NDI0NzQtNjE4Y2FyaHRqYWZueXJ1dQ=='), 'Northwind');
+  assert.equal(guessCompanyFromTab('irrelevant title', 'https://northwind.app.loxo.co/job/OTk5OTktZmFrZWpvYmlkZmFrZWpvYg=='), 'Northwind');
   assert.equal(guessCompanyFromTab('Product Owner', 'https://ats.rippling.com/en-CA/acme/jobs/uuid'), 'Acme');
 });
 
