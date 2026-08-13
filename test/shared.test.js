@@ -336,6 +336,78 @@ test('normalizeUrl returns null for a malformed URL instead of throwing', () => 
   assert.equal(normalizeUrl('not a url'), null);
 });
 
+test('normalizeUrl keeps a query-param job ID when the path has none, instead of collapsing every posting on the host+path to one key', () => {
+  // Regression: some ATS platforms put the actual distinguishing job ID in
+  // a query param, not the path (observed: an hrmdirect-hosted career site
+  // using "?req=<id>" — every posting on that site shares the exact same
+  // path, "/employment/job-opening.php", which has no digits/UUID of its
+  // own). The old normalizeUrl only ever read pathname, silently dropping
+  // the query string entirely — two completely different tracked postings
+  // on the same host+path collapsed to one normalized key, so the popup
+  // showed one job's tracked status (stage, notes) on the other job's page.
+  assert.notEqual(
+    normalizeUrl('https://acme.hrmdirect.com/employment/job-opening.php?req=1111111'),
+    normalizeUrl('https://acme.hrmdirect.com/employment/job-opening.php?req=2222222'),
+  );
+});
+
+test('normalizeUrl drops the whole query string when the path already has a strong id (a long digit run or a UUID)', () => {
+  // Ashby-hosted postings already carry the full job UUID in the path
+  // itself, so the query is redundant regardless of what it contains —
+  // whether or not a tracked entry's URL happened to carry "?src=LinkedIn"
+  // (a real one did) shouldn't matter.
+  assert.equal(
+    normalizeUrl('https://jobs.ashbyhq.com/acme/f8250782-ea79-41ed-93b5-b2f93668218c?src=LinkedIn'),
+    normalizeUrl('https://jobs.ashbyhq.com/acme/f8250782-ea79-41ed-93b5-b2f93668218c'),
+  );
+});
+
+test('normalizeUrl: LinkedIn\'s own per-visit tracking params never affect the normalized key, only its path-based job id does', () => {
+  // Critical regression check against the fix above: LinkedIn job URLs
+  // already carry the real job id in the path, but ALSO carry huge
+  // tracking query strings (trk/refId/trackingId/eBP) that are a different,
+  // effectively random value on every single visit to the very same job —
+  // even reopening the identical email digest link twice produces two
+  // different query strings. If a fix for the hrmdirect-style bug above
+  // naively started keeping query strings by default instead of using this
+  // path-based check, it would silently break recognizing an already-
+  // tracked LinkedIn job as tracked at all (the single largest source of
+  // tracked entries in real usage) — exactly as badly as the original bug,
+  // just in the opposite direction.
+  const a = 'https://www.linkedin.com/jobs/view/4416237219/?trk=eml-abc&refId=xyz1%3D%3D&trackingId=aaa1%3D%3D';
+  const b = 'https://www.linkedin.com/jobs/view/4416237219/?trk=eml-def&refId=xyz2%3D%3D&trackingId=bbb2%3D%3D';
+  const different = 'https://www.linkedin.com/jobs/view/9999999999/?trk=eml-abc';
+  assert.equal(normalizeUrl(a), normalizeUrl(b));
+  assert.notEqual(normalizeUrl(a), normalizeUrl(different));
+});
+
+test('normalizeUrl: a multi-tenant platform whose path alone is generic still disambiguates via its full (non-tracking) query', () => {
+  // A real multi-tenant ATS puts a client/tenant id in one query param and
+  // the job id in another, with a path that's identical across every
+  // tenant and every job. Since the path has no strong id, the WHOLE query
+  // is kept (not just an allowlisted "job id" param name) — otherwise two
+  // different companies' numerically-identical job id could collide into
+  // the same normalized key. A hand-maintained allowlist of "known job-id
+  // param names" would have missed this; keeping the full (non-tracking)
+  // query when the path is insufficient handles it without needing to know
+  // this platform's param names in advance.
+  assert.notEqual(
+    normalizeUrl('https://workforcenow.example.com/mdf/recruitment.html?cid=tenant-a&jobId=587589'),
+    normalizeUrl('https://workforcenow.example.com/mdf/recruitment.html?cid=tenant-b&jobId=587589'),
+  );
+});
+
+test('normalizeUrl ignores the hash fragment, and is insensitive to query-param order after stripping tracking noise', () => {
+  assert.equal(
+    normalizeUrl('https://acme.hrmdirect.com/employment/job-opening.php?req=1111111#job'),
+    normalizeUrl('https://acme.hrmdirect.com/employment/job-opening.php?req=1111111'),
+  );
+  assert.equal(
+    normalizeUrl('https://acme.hrmdirect.com/x?req=1&foo=2'),
+    normalizeUrl('https://acme.hrmdirect.com/x?foo=2&req=1'),
+  );
+});
+
 // ---- extractJobInfo / guessCompanyFromTab (full composition) ----
 // These compose extractFromKnownAtsUrl + parseJobTitleFallback with a
 // precedence rule between them — tested at this level, not just the pieces
