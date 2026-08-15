@@ -130,6 +130,28 @@ test('extractJobPostingRoleCompany returns null when no JobPosting node is prese
   assert.equal(extractJobPostingRoleCompany('<html>no structured data</html>'), null);
 });
 
+// Greenhouse's own embed/job_app page (what a company's careers page embeds
+// in an iframe via "?gh_jid=...") has no JobPosting ld+json at all — the
+// application form is client-rendered — but its <title> is always exactly
+// "Job Application for {role} at {company}", set server-side.
+const GREENHOUSE_EMBED_HTML = `
+<html><head>
+<title>Job Application for Product Engineer at Acme</title>
+<script type="application/ld+json">{"@type":"WebSite","name":"Acme"}</script>
+</head><body></body></html>`;
+
+test('extractJobPostingRoleCompany falls back to a Greenhouse embed page\'s "Job Application for X at Y" title', () => {
+  assert.deepEqual(
+    extractJobPostingRoleCompany(GREENHOUSE_EMBED_HTML),
+    { role: 'Product Engineer', company: 'Acme' },
+  );
+});
+
+test('extractJobPostingRoleCompany decodes an HTML entity in the title fallback\'s company name', () => {
+  const html = '<html><head><title>Job Application for Support Engineer at Acme &amp; Co</title></head></html>';
+  assert.deepEqual(extractJobPostingRoleCompany(html), { role: 'Support Engineer', company: 'Acme & Co' });
+});
+
 test('descriptionToBlocks turns a JobPosting description into clean blocks without page chrome', () => {
   const blocks = descriptionToBlocks(extractJobPostingDescription(JOBPAGE_HTML));
   assert.ok(blocks.length >= 1);
