@@ -362,6 +362,19 @@ test('normalizeUrl drops the whole query string when the path already has a stro
   );
 });
 
+test('normalizeUrl treats an Ashby job\'s "/application" sub-page as the same posting as its base job URL', () => {
+  // Ashby's own "Apply" button navigates from the base job URL to the same
+  // job id with "/application" appended (and drops the "?departmentId=..."
+  // query the base URL may have carried, since it's not part of the id).
+  // Without stripping this, re-visiting the base job URL after applying
+  // normalizes to a different key than the one saved at apply-time, and the
+  // popup shows the job as untracked even though it's already Applied.
+  assert.equal(
+    normalizeUrl('https://jobs.ashbyhq.com/acme/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee/application'),
+    normalizeUrl('https://jobs.ashbyhq.com/acme/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee?departmentId=bbbbbbbb-cccc-dddd-eeee-ffffffffffff'),
+  );
+});
+
 test('normalizeUrl: LinkedIn\'s own per-visit tracking params never affect the normalized key, only its path-based job id does', () => {
   // Critical regression check against the fix above: LinkedIn job URLs
   // already carry the real job id in the path, but ALSO carry huge

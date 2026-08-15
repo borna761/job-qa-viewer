@@ -229,6 +229,9 @@ function normalizeUrl(raw) {
     const u = new URL(raw);
     let path = u.pathname.replace(/^\/[a-z]{2}-[a-z]{2}\//i, '/').replace(/\/$/, '');
     path = path.replace(/\/job\/[^/]+\/(.*_r\d+[^/]*)/i, '/job/$1');
+    // Ashby's "Apply" button navigates from the base job URL to this same
+    // path + "/application" — still the same posting, not a different one.
+    path = path.replace(/^(\/[^/]+\/[0-9a-f-]{36})\/application$/i, '$1');
 
     let query = '';
     if (!pathHasStrongId(path)) {
