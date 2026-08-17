@@ -34,6 +34,19 @@ const STAGE_COLOR = {
 // the other via comment.
 const KNOWN_ATS_HOSTS = ['ashbyhq.com', 'greenhouse.io', 'lever.co', 'myworkday.com', 'myworkdayjobs.com', 'icims.com'];
 
+// A Workday requisition id, as the trailing "_<code>" suffix of a /job/
+// slug. Not always "_R<digits>" — tenants use bespoke shapes too (observed:
+// digits-then-letters-then-digits like "_99ZZ123456", plus a "-1"
+// repost/revision suffix) — so this matches any trailing "_<code containing
+// a digit>" instead of assuming the literal "R" prefix. Shared between
+// roleFromJobSlug (extracting the role) and normalizeUrl (collapsing the
+// redundant location segment in the path) below — they used to have their
+// own independently-drifted copies of this, and normalizeUrl's stricter
+// "_r\d+"-only version silently failed to collapse the location segment for
+// any tenant using a bespoke id shape, making the same posting normalize to
+// two different keys depending on which page linked to it.
+const WORKDAY_REQ_ID_SUFFIX = '_(?:[A-Za-z0-9]+\\d[A-Za-z0-9]*|\\d[A-Za-z0-9]+)(?:-\\d+)?';
+
 // ---- Text case helpers ----
 // Capitalize the first letter of each word without altering punctuation —
 // safe for already human-readable strings like a JSON-LD job title
@@ -117,7 +130,7 @@ function extractFromKnownAtsUrl(pageTitle, tabUrl) {
   // "_2"), which is more likely a role's own level number than a real
   // requisition ID; real IDs are always at least 2 characters.
   const roleFromJobSlug = () => {
-    const m = u.pathname.match(/\/job\/(?:[^/]+\/)?([^/]+?)(?:_(?:[A-Za-z0-9]+\d[A-Za-z0-9]*|\d[A-Za-z0-9]+)(?:-\d+)?)?(?:\/|$)/);
+    const m = u.pathname.match(new RegExp(`/job/(?:[^/]+/)?([^/]+?)(?:${WORKDAY_REQ_ID_SUFFIX})?(?:/|$)`));
     return (m && !m[1].includes('=')) ? titleCase(m[1]) : null;
   };
 
@@ -228,7 +241,7 @@ function normalizeUrl(raw) {
   try {
     const u = new URL(raw);
     let path = u.pathname.replace(/^\/[a-z]{2}-[a-z]{2}\//i, '/').replace(/\/$/, '');
-    path = path.replace(/\/job\/[^/]+\/(.*_r\d+[^/]*)/i, '/job/$1');
+    path = path.replace(new RegExp(`/job/[^/]+/([^/]*${WORKDAY_REQ_ID_SUFFIX})$`, 'i'), '/job/$1');
     // Ashby's "Apply" button navigates from the base job URL to this same
     // path + "/application" — still the same posting, not a different one.
     path = path.replace(/^(\/[^/]+\/[0-9a-f-]{36})\/application$/i, '$1');
