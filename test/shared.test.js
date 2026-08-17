@@ -332,6 +332,24 @@ test('normalizeUrl collapses Workday\'s redundant location segment in the job-id
   );
 });
 
+test('normalizeUrl collapses Workday\'s redundant location segment even when the requisition id isn\'t "_R<digits>"', () => {
+  // Some Workday tenants use a bespoke requisition id shape instead of the
+  // "_R1234" convention this collapse regex was originally written around —
+  // observed: a real posting id shaped like digits, then letters, then more
+  // digits, plus a "-1" revision suffix (e.g. "_99ZZ123456-1" below, a
+  // synthetic id in the same shape). One entry point (a
+  // department listing) links straight to "/job/{slug}" with no location
+  // segment at all; another (search/LinkedIn) links to
+  // "/job/{location}/{slug}" for the exact same posting. Without
+  // generalizing this regex the same way roleFromJobSlug's already was
+  // (see its comment above), these normalize to two different keys and an
+  // already-Applied job looks untracked from the other entry point.
+  assert.equal(
+    normalizeUrl('https://acme.wd1.myworkdayjobs.com/en-US/Ext/job/Widget-Builder--Principal-Product-Manager_99ZZ123456-1'),
+    normalizeUrl('https://acme.wd1.myworkdayjobs.com/Ext/job/Example-City-XX/Widget-Builder--Principal-Product-Manager_99ZZ123456-1?src=JB-10065&source=LinkedIn'),
+  );
+});
+
 test('normalizeUrl returns null for a malformed URL instead of throwing', () => {
   assert.equal(normalizeUrl('not a url'), null);
 });
