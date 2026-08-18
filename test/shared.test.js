@@ -40,6 +40,19 @@ test('companyNamesLooselyMatch: guards against trivial short-name false positive
   assert.equal(companyNamesLooselyMatch('Acme', null), false);
 });
 
+test('companyNamesLooselyMatch: a short tracked company name doesn\'t match merely because its letters appear mid-word in an unrelated longer name', () => {
+  // Real case that triggered this: a short tracked company name happened to
+  // be a literal substring of an ordinary word embedded in a much longer,
+  // completely unrelated guessed company name — the old raw-substring check
+  // (min length 3) matched it, showing an unrelated company's tracked
+  // status on this page. "Aria"/"Bulgaria" reproduces the same shape: "aria"
+  // is a genuine substring of "bulgaria" but never occurs there as a whole
+  // word.
+  assert.equal(companyNamesLooselyMatch('Aria', "Bulgaria Imports Ltd"), false);
+  // Still matches when the short name IS a whole word within the longer one.
+  assert.equal(companyNamesLooselyMatch('Aria', 'Aria Robotics'), true);
+});
+
 // ---- extractFromKnownAtsUrl ----
 
 test('extractFromKnownAtsUrl: Lever/Ashby/Greenhouse use the company-as-first-path-segment shape', () => {
