@@ -69,17 +69,37 @@ function titleCase(s) {
 
 // ---- Loose company-name matching ----
 // A title/hostname-derived guess ("acmewidgets") often won't equal the
-// company's saved display name ("Acme") exactly, so this is a substring
-// check in either direction. A minimum length guard avoids trivial false
-// positives from very short names.
+// company's saved display name ("Acme") exactly, so this checks whether the
+// shorter name's words appear, in order and run together, as a *whole-word*
+// run within the longer name — not merely as a raw character substring
+// anywhere in it. A raw substring check (this function's old behavior)
+// falsely matched a short tracked company name whenever its letters
+// happened to occur mid-word inside a completely unrelated longer name
+// (observed: a short real company name that also happened to be a literal
+// substring of an ordinary English word embedded in another company's much
+// longer name). Matching only
+// at whole-word boundaries still allows "acmewidgets" (no spaces) to match
+// "Acme Widgets" (its worded form), since both tokenize to the same
+// ['acme','widgets'] word run — it just stops treating an ordinary English
+// word as if it were a match for any company name that's one of its
+// substrings.
 function companyNamesLooselyMatch(a, b) {
   if (!a || !b) return false;
-  const na = a.toLowerCase().replace(/[^a-z0-9]/g, '');
-  const nb = b.toLowerCase().replace(/[^a-z0-9]/g, '');
-  if (!na || !nb) return false;
-  const [shorter, longer] = na.length <= nb.length ? [na, nb] : [nb, na];
-  if (shorter.length < 3) return false;
-  return longer.includes(shorter);
+  const wordsOf = s => s.toLowerCase().match(/[a-z0-9]+/g) || [];
+  const wa = wordsOf(a), wb = wordsOf(b);
+  if (!wa.length || !wb.length) return false;
+  const [shortWords, longWords] = wa.join('').length <= wb.join('').length ? [wa, wb] : [wb, wa];
+  const shortStr = shortWords.join('');
+  if (shortStr.length < 3) return false;
+  for (let start = 0; start < longWords.length; start++) {
+    let acc = '';
+    for (let end = start; end < longWords.length; end++) {
+      acc += longWords[end];
+      if (acc.length > shortStr.length) break;
+      if (acc === shortStr) return true;
+    }
+  }
+  return false;
 }
 
 // ---- JSON-LD organization name cleanup ----
