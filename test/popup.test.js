@@ -91,6 +91,12 @@ test('otherAppsHtml returns an empty string when there are no other entries', ()
   assert.equal(popup.otherAppsHtml('Acme', []), '');
 });
 
+test('otherAppsHtml puts the full role text in a title attribute, since the CSS truncates it visually', () => {
+  const popup = loadPopup();
+  const html = popup.otherAppsHtml('Acme', [{ role: 'Senior Product Manager - Widget Platform Integrations', stage: 'Applied' }]);
+  assert.match(html, /title="Senior Product Manager - Widget Platform Integrations"/);
+});
+
 // ---- renderTracked (real DOM via jsdom) ----
 
 test('renderTracked shows company, role, stage badge, and the "Also at X" box', () => {

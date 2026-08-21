@@ -133,7 +133,7 @@ function otherAppsHtml(company, others) {
       <div class="other-apps-title">Also at ${esc(company)}</div>
       ${shown.map(e => `
         <div class="other-apps-item">
-          <span class="other-apps-role">${esc(e.role || '(no role)')}</span>
+          <span class="other-apps-role" title="${esc(e.role || '(no role)')}">${esc(e.role || '(no role)')}</span>
           ${stageBadge(e.stage)}
         </div>
       `).join('')}
