@@ -91,6 +91,31 @@ function readJobPostingJsonLd(atsHosts) {
 
   if (jobPosting) return { ...jobPosting, embeddedJobUrl };
   if (orgName && /\/(jobs?|careers?)(\/|$)/i.test(location.pathname)) return { company: orgName, embeddedJobUrl };
+
+  // Some ATS-hosted career sites (observed: Zoho Recruit tenants) ship no
+  // JobPosting/Organization JSON-LD at all, but do set <meta
+  // property="og:site_name"> to the tenant's real company name and build
+  // <title>/og:title as "{site_name} - {role}[ - trailing noise]" — two
+  // different Zoho Recruit tenants observed with differently-formatted
+  // trailing segments (one tenant's own work-type suffix like "- Remote
+  // Job", another a dangling, unfilled "in" left over from a blank
+  // location). Only the leading "{site_name} - " prefix is common to both,
+  // so that's the only part safe to rely on for a full role+company match;
+  // still strip a trailing "- <words> Job" suffix when present, since a
+  // real role essentially never ends in the bare word "Job" itself. Same
+  // job/careers-URL gating as the Organization fallback above, for the same
+  // reason (og:site_name is common on non-job pages too) — not host-gated
+  // to Zoho Recruit specifically since the signal itself is generic.
+  const siteName = document.querySelector('meta[property="og:site_name"]')?.content?.trim();
+  if (siteName && /\/(jobs?|careers?)(\/|$)/i.test(location.pathname)) {
+    const title = document.title || '';
+    if (title.startsWith(siteName + ' - ')) {
+      const role = title.slice(siteName.length + 3).trim().replace(/\s*-\s*[A-Za-z\s]+\bJob$/i, '').trim();
+      if (role) return { role, company: siteName, embeddedJobUrl };
+    }
+    return { company: siteName, embeddedJobUrl };
+  }
+
   return { embeddedJobUrl };
 }
 

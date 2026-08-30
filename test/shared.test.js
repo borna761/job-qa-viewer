@@ -234,6 +234,20 @@ test('parseJobTitleFallback: Indeed\'s "Role - Company - Location" dash conventi
   );
 });
 
+test('parseJobTitleFallback: Zoho Recruit\'s "Company - Role - WorkType Job" convention, company leading', () => {
+  assert.deepEqual(
+    parseJobTitleFallback('Acme - Remote Product Manager - Remote Job', 'https://acme.zohorecruit.com/jobs/Careers/1/Remote-Product-Manager'),
+    { role: 'Remote Product Manager', company: 'Acme' },
+  );
+});
+
+test('parseJobTitleFallback: a second Zoho Recruit tenant with differently-shaped trailing noise is split but not over-cleaned', () => {
+  assert.deepEqual(
+    parseJobTitleFallback('Northwind Staffing Group - Warehouse Associate (Contract) in', 'https://northwind.zohorecruit.com/jobs/Careers/1/Warehouse-Associate'),
+    { role: 'Warehouse Associate (Contract) in', company: 'Northwind Staffing Group' },
+  );
+});
+
 test('parseJobTitleFallback: does not fabricate a company from a bare dash on a non-Indeed page', () => {
   assert.deepEqual(
     parseJobTitleFallback('Python Tutorial - Learn Fast', 'https://www.youtube.com/watch?v=xyz'),
@@ -540,6 +554,18 @@ test('guessCompanyFromTab: falls back to title parsing when no known ATS host ma
 
 test('guessCompanyFromTab: returns null when neither the URL nor the title yields a company', () => {
   assert.equal(guessCompanyFromTab('Python Tutorial - Learn Fast', 'https://www.youtube.com/watch?v=xyz'), null);
+});
+
+// background.js has no DOM access (see its own comment on guessCompanyFromTab),
+// so a Zoho Recruit page's company can only come from this title-only path —
+// unlike popup.js, which also has an og:site_name-based fallback available.
+// This is what lets the toolbar's "other applications at this company" badge
+// dot detect a match on a Zoho Recruit tab at all.
+test('guessCompanyFromTab: resolves the company on a Zoho Recruit page from title alone, no DOM access needed', () => {
+  assert.equal(
+    guessCompanyFromTab('Acme - Remote Product Manager - Remote Job', 'https://acme.zohorecruit.com/jobs/Careers/1/Remote-Product-Manager'),
+    'Acme',
+  );
 });
 
 // ---- stripLeadingOrgCode ----

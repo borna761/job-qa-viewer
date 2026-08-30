@@ -367,6 +367,24 @@ function parseJobTitleFallback(pageTitle, tabUrl, knownHost) {
     if (dashMatch) return { role: dashMatch[1].trim(), company: cleanCompany(dashMatch[2]) };
   }
 
+  // "Company - Role[ - trailing noise]" — Zoho Recruit's own title
+  // convention, with the company leading rather than trailing (the mirror
+  // image of every pattern above). Two different Zoho Recruit tenants
+  // observed with differently-formatted trailing segments (one a work-type
+  // suffix like "- Remote Job", another a dangling, unfilled "in" left over
+  // from a blank location) — only strip the former (a real role essentially
+  // never ends in the bare word "Job" itself); leave the latter's noise in
+  // the role rather than guessing at every possible shape. Host-gated for
+  // the same reason Indeed's dash split above is.
+  if (host && /(^|\.)zohorecruit\.com$/.test(host)) {
+    const dashMatch = title.match(new RegExp(`^(.+?)\\s*${DASH}\\s*(.+)$`));
+    if (dashMatch) {
+      const company = dashMatch[1].trim();
+      const role = dashMatch[2].trim().replace(/\s*-\s*[A-Za-z\s]+\bJob$/i, '').trim();
+      if (company && role) return { role, company };
+    }
+  }
+
   return { role: title, company: '' };
 }
 
