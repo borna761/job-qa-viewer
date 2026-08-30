@@ -336,6 +336,48 @@ test('readJobPostingJsonLd: Organization-only fallback still reports embeddedJob
   });
 });
 
+// A Zoho Recruit tenant carries no JobPosting/Organization JSON-LD at all —
+// og:site_name plus a "{site_name} - {role} - {work type} Job" title is the
+// only usable signal (observed on a real tenant's career page).
+test('readJobPostingJsonLd: og:site_name + title fallback strips a trailing work-type "Job" suffix', () => {
+  const popup = loadPopup(undefined, { url: 'https://acme.zohorecruit.com/jobs/Careers/1/Remote-Product-Manager' });
+  global.document.head.innerHTML = '<meta property="og:site_name" content="Acme">';
+  global.document.title = 'Acme - Remote Product Manager - Remote Job';
+  assert.deepEqual(popup.readJobPostingJsonLd(KNOWN_ATS_HOSTS), {
+    role: 'Remote Product Manager', company: 'Acme', embeddedJobUrl: null,
+  });
+});
+
+// A second Zoho Recruit tenant formats the trailing segment differently (a
+// dangling, unfilled "in" left over from a blank location) — only the
+// leading "{site_name} - " prefix is common to both, so that's all this
+// fallback strips; the mismatched trailing noise is left in the role rather
+// than guessed at.
+test('readJobPostingJsonLd: og:site_name + title fallback leaves untrimmed trailing noise in the role', () => {
+  const popup = loadPopup(undefined, { url: 'https://northwind.zohorecruit.com/jobs/Careers/1/Warehouse-Associate' });
+  global.document.head.innerHTML = '<meta property="og:site_name" content="Northwind Staffing Group">';
+  global.document.title = 'Northwind Staffing Group - Warehouse Associate (Contract) in';
+  assert.deepEqual(popup.readJobPostingJsonLd(KNOWN_ATS_HOSTS), {
+    role: 'Warehouse Associate (Contract) in', company: 'Northwind Staffing Group', embeddedJobUrl: null,
+  });
+});
+
+test('readJobPostingJsonLd: og:site_name fallback is company-only when the title doesn\'t start with it', () => {
+  const popup = loadPopup(undefined, { url: 'https://example.com/careers/1' });
+  global.document.head.innerHTML = '<meta property="og:site_name" content="Acme">';
+  global.document.title = 'Product Engineer at Acme';
+  assert.deepEqual(popup.readJobPostingJsonLd(KNOWN_ATS_HOSTS), {
+    company: 'Acme', embeddedJobUrl: null,
+  });
+});
+
+test('readJobPostingJsonLd: og:site_name fallback is skipped outside a job/careers-shaped URL', () => {
+  const popup = loadPopup(undefined, { url: 'https://example.com/about' });
+  global.document.head.innerHTML = '<meta property="og:site_name" content="Acme">';
+  global.document.title = 'Acme - About Us';
+  assert.deepEqual(popup.readJobPostingJsonLd(KNOWN_ATS_HOSTS), { embeddedJobUrl: null });
+});
+
 // ---- init(): resolving role/company from an embedded ATS iframe ----
 
 test('init: resolves role/company from the server when the page embeds a known ATS iframe with no usable top-frame JSON-LD', async () => {
