@@ -330,6 +330,15 @@ function parseJobTitleFallback(pageTitle, tabUrl, knownHost) {
   // matched.
   const cleanCompany = s => s.split(/\s*•\s*/)[0].trim();
 
+  // ADP Workforce Now's recruitment SPA titles every posting "Career Center
+  // | Recruitment" — a product label, not a role or company, so the pipe
+  // split below would fabricate both. The real role lives only in the
+  // rendered DOM (popup.js reads it there); the company isn't on the page
+  // at all, so leave both blank here rather than guess.
+  if (host && /(^|\.)adp\.com$/.test(host) && /^Career Center\s*\|\s*Recruitment$/i.test(title)) {
+    return { role: '', company: '' };
+  }
+
   // "Role - Careers At Company" / "Role - Jobs At Company" — the title
   // convention hrmdirect-hosted career pages use. Checked before the
   // generic "at"-match below, which would otherwise split on this same

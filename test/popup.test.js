@@ -378,6 +378,26 @@ test('readJobPostingJsonLd: og:site_name fallback is skipped outside a job/caree
   assert.deepEqual(popup.readJobPostingJsonLd(KNOWN_ATS_HOSTS), { embeddedJobUrl: null });
 });
 
+// ADP Workforce Now's recruitment SPA sets a generic title and ships no
+// JSON-LD or og tags; the posting's role is only in the rendered <h2>.
+test('readJobPostingJsonLd: ADP recruitment page reads the role from the rendered heading', () => {
+  const popup = loadPopup(undefined, { url: 'https://workforcenow.adp.com/mascsr/default/mdf/recruitment/recruitment.html?cid=abc&jobId=1' });
+  global.document.body.innerHTML = '<h2>Senior Product Manager, Acme</h2>';
+  assert.deepEqual(popup.readJobPostingJsonLd(KNOWN_ATS_HOSTS), {
+    role: 'Senior Product Manager, Acme', embeddedJobUrl: null,
+  });
+});
+
+test('init: an ADP recruitment page fills in the role from the DOM and leaves company blank', async () => {
+  const popup = loadPopup({
+    activeTab: { id: 1, url: 'https://workforcenow.adp.com/mascsr/default/mdf/recruitment/recruitment.html?cid=abc&jobId=1', title: 'Career Center | Recruitment' },
+    executeScript: async () => [{ result: { role: 'Senior Product Manager, Acme', embeddedJobUrl: null } }],
+  });
+  await popup.init();
+  assert.equal(global.document.getElementById('inp-role').value, 'Senior Product Manager, Acme');
+  assert.equal(global.document.getElementById('inp-company').value, '');
+});
+
 // ---- init(): resolving role/company from an embedded ATS iframe ----
 
 test('init: resolves role/company from the server when the page embeds a known ATS iframe with no usable top-frame JSON-LD', async () => {

@@ -264,6 +264,15 @@ test('parseJobTitleFallback: Collage split keeps a hyphenated role whole', () =>
   );
 });
 
+// ADP Workforce Now's recruitment SPA titles every posting "Career Center |
+// Recruitment" — a generic product label, not a role or a company.
+test('parseJobTitleFallback: ADP Workforce Now\'s generic "Career Center | Recruitment" title yields neither role nor company', () => {
+  assert.deepEqual(
+    parseJobTitleFallback('Career Center | Recruitment', 'https://workforcenow.adp.com/mascsr/default/mdf/recruitment/recruitment.html?cid=abc&jobId=1'),
+    { role: '', company: '' },
+  );
+});
+
 test('parseJobTitleFallback: does not fabricate a company from a bare dash on a non-Indeed page', () => {
   assert.deepEqual(
     parseJobTitleFallback('Python Tutorial - Learn Fast', 'https://www.youtube.com/watch?v=xyz'),

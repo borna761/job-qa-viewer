@@ -116,6 +116,14 @@ function readJobPostingJsonLd(atsHosts) {
     return { company: siteName, embeddedJobUrl };
   }
 
+  // ADP Workforce Now's recruitment SPA: generic title, no JSON-LD, no og
+  // tags — the posting's role is only in the rendered <h2>. Company isn't
+  // anywhere on the page (just a logo image), so it's left for the user.
+  if (/(^|\.)adp\.com$/.test(location.hostname) && /\/mdf\/recruitment\//i.test(location.pathname)) {
+    const role = document.querySelector('h2')?.innerText?.trim() || document.querySelector('h2')?.textContent?.trim();
+    if (role) return { role, embeddedJobUrl };
+  }
+
   return { embeddedJobUrl };
 }
 
@@ -510,6 +518,10 @@ async function init() {
           }
           if (embedded?.role && embedded?.company) {
             info = { role: capitalizeWords(embedded.role), company: stripLeadingOrgCode(embedded.company) };
+          } else if (jsonLd?.role && !jsonLd?.company) {
+            // Role-only result (ADP's recruitment SPA, whose company isn't on
+            // the page) — keep the title-derived company, replace the role.
+            info = { ...info, role: capitalizeWords(jsonLd.role) };
           } else if (jsonLd?.company) {
             // Organization-only fallback (no JobPosting node) — always trust
             // it over the title-derived company guess, not just when that
