@@ -385,6 +385,16 @@ function parseJobTitleFallback(pageTitle, tabUrl, knownHost) {
     }
   }
 
+  // "Company - Role" — Collage's (secure.collage.co) title convention, also
+  // company-leading like Zoho Recruit's above but with no trailing noise.
+  // Split on the first " - " only, so a role that itself contains one
+  // ("Product Manager - Payments") stays whole. Host-gated for the same
+  // reason Indeed's dash split is.
+  if (host && /(^|\.)collage\.co$/.test(host)) {
+    const dashMatch = title.match(new RegExp(`^(.+?)\\s+${DASH}\\s+(.+)$`));
+    if (dashMatch) return { role: dashMatch[2].trim(), company: dashMatch[1].trim() };
+  }
+
   return { role: title, company: '' };
 }
 
