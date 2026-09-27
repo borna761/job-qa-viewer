@@ -248,6 +248,22 @@ test('parseJobTitleFallback: a second Zoho Recruit tenant with differently-shape
   );
 });
 
+test('parseJobTitleFallback: Collage\'s "Company - Role" convention, company leading', () => {
+  assert.deepEqual(
+    parseJobTitleFallback('Acme Inc - Senior Product Manager', 'https://secure.collage.co/jobs/acme/12345'),
+    { role: 'Senior Product Manager', company: 'Acme Inc' },
+  );
+});
+
+// Collage's title has no trailing noise to strip, so a role that itself
+// contains " - " must survive intact — split only on the first separator.
+test('parseJobTitleFallback: Collage split keeps a hyphenated role whole', () => {
+  assert.deepEqual(
+    parseJobTitleFallback('Acme Inc - Product Manager - Payments', 'https://secure.collage.co/jobs/acme/12345'),
+    { role: 'Product Manager - Payments', company: 'Acme Inc' },
+  );
+});
+
 test('parseJobTitleFallback: does not fabricate a company from a bare dash on a non-Indeed page', () => {
   assert.deepEqual(
     parseJobTitleFallback('Python Tutorial - Learn Fast', 'https://www.youtube.com/watch?v=xyz'),
@@ -565,6 +581,13 @@ test('guessCompanyFromTab: resolves the company on a Zoho Recruit page from titl
   assert.equal(
     guessCompanyFromTab('Acme - Remote Product Manager - Remote Job', 'https://acme.zohorecruit.com/jobs/Careers/1/Remote-Product-Manager'),
     'Acme',
+  );
+});
+
+test('guessCompanyFromTab: resolves the company on a Collage page from title alone', () => {
+  assert.equal(
+    guessCompanyFromTab('Acme Inc - Senior Product Manager', 'https://secure.collage.co/jobs/acme/12345'),
+    'Acme Inc',
   );
 });
 
