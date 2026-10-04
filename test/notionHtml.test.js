@@ -207,3 +207,12 @@ test('isAllowedEmbeddedJobUrl rejects lookalike hosts, non-https, and malformed 
   assert.equal(isAllowedEmbeddedJobUrl('not a url'), false);
   assert.equal(isAllowedEmbeddedJobUrl(''), false);
 });
+
+test('htmlToNotionBlocks keeps every block within Notion\'s 100 rich-text run limit', () => {
+  const runs = Array.from({ length: 250 }, (_, i) => `<strong>b${i}</strong> plain${i} `).join('');
+  const blocks = htmlToNotionBlocks(`<p>${runs}</p>`);
+  assert.ok(blocks.length > 1);
+  assert.ok(blocks.every(b => b[b.type].rich_text.length <= 100));
+  const text = blocks.map(b => b[b.type].rich_text.map(r => r.text.content).join('')).join('');
+  assert.match(text, /b249/);
+});
